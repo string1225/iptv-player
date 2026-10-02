@@ -1,7 +1,7 @@
 """Android 10 regression: 12k channels, cache-first refresh, Release downloads and install handoff.
 
 Build debug with both testPlaylistBaseUrl and testUpdateBaseUrl=http://10.0.2.2:8877.
-Supply signed 0.2.1 APKs (same signer / different signer). Clears only a dedicated emulator.
+Supply newer signed APKs (same signer / different signer). Clears only a dedicated emulator.
 """
 import argparse
 import hashlib
@@ -23,8 +23,13 @@ def main():
     parser.add_argument("--apk", type=pathlib.Path, required=True)
     parser.add_argument("--update-apk", type=pathlib.Path, required=True)
     parser.add_argument("--wrong-signer-apk", type=pathlib.Path, required=True)
+    parser.add_argument("--update-version", default="0.2.2")
     parser.add_argument("--output", type=pathlib.Path, default=pathlib.Path("artifacts/update-smoke"))
     args = parser.parse_args()
+    parts = [int(part) for part in args.update_version.split(".")]
+    if len(parts) != 3:
+        raise ValueError("Use a three-component update version")
+    update_code = parts[0] * 1_000_000 + parts[1] * 1_000 + parts[2]
     if not args.serial.startswith("emulator-"):
         raise ValueError("Use a dedicated emulator: this test clears application data")
     args.output.mkdir(parents=True, exist_ok=True)
@@ -65,9 +70,9 @@ def main():
                 if apk is None:
                     self.send_error(404)
                     return
-                self.body(json.dumps({"tag_name": "v0.2.1", "draft": False, "prerelease": False,
+                self.body(json.dumps({"tag_name": "v" + args.update_version, "draft": False, "prerelease": False,
                     "body": "Android TV test release", "assets": [{"name": "iptv-player.apk", "size": apk.stat().st_size,
-                    "browser_download_url": "https://github.com/string1225/iptv-player/releases/download/v0.2.1/iptv-player.apk",
+                    "browser_download_url": f"https://github.com/string1225/iptv-player/releases/download/v{args.update_version}/iptv-player.apk",
                     "digest": "sha256:" + hashlib.sha256(apk.read_bytes()).hexdigest()}]}).encode())
                 return
             if path == "/proxy.apk":
@@ -221,7 +226,7 @@ def main():
         state["release"] = args.update_apk
         state["requests"].clear()
         key(23)
-        wait("manual check discovers a stable newer release", lambda v: any("发现新版 0.2.1" in t for t in v))
+        wait("manual check discovers a stable newer release", lambda v: any("发现新版 " + args.update_version in t for t in v))
         key(23)
         wait("manual download falls back from accelerator and validates signed APK", lambda v: any("已下载并校验" in t for t in v))
         assert state["requests"].index("/proxy.apk") < state["requests"].index("/direct.apk"), state
@@ -249,7 +254,7 @@ def main():
         updates()
         wait("automatic update rejects an APK signed by another key", lambda v: any("签名与当前安装不一致" in t for t in v), timeout=40)
         cached = adb("shell", "run-as", "com.string.iptv", "ls", "files/updates")
-        assert "update-2001.apk" not in cached, cached
+        assert f"update-{update_code}.apk" not in cached, cached
         screenshot("wrong-signature")
         crashes = adb("logcat", "-d", "-s", "AndroidRuntime:E")
         assert "FATAL EXCEPTION" not in crashes, crashes

@@ -20,6 +20,8 @@ import android.widget.Toast
 import androidx.media3.common.util.UnstableApi
 import com.string.iptv.catalog.Channel
 import com.string.iptv.catalog.CatalogIndex
+import com.string.iptv.catalog.ChannelNavigation
+import com.string.iptv.catalog.RouteState
 import com.string.iptv.catalog.StartupChannel
 import com.string.iptv.data.CatalogSnapshot
 import com.string.iptv.data.PlaylistRepository
@@ -50,6 +52,7 @@ class MainActivity : Activity() {
     private var notifiedUpdate: String? = null
     private var catalog: CatalogSnapshot? = null
     private var latestStatus: PlaybackStatus? = null
+    private var playingGroup: String? = null
     private val handler = Handler(Looper.getMainLooper())
     private var lastBackAt = 0L
     private var dialog: AlertDialog? = null
@@ -60,7 +63,14 @@ class MainActivity : Activity() {
         val number = digits.toIntOrNull()
         digits = ""
         val channel = number?.let { catalog?.channels?.getOrNull(it - 1) }
-        if (channel != null) play(channel) else toast("没有这个频道编号")
+        when {
+            channel == null -> toast("没有这个频道编号")
+            preferences.unavailableLabel(channel) != null -> {
+                toast("该频道标记为不可用，请从列表选择重试")
+                openDrawer()
+            }
+            else -> play(channel)
+        }
     }
     private val hideInfo = Runnable {
         if (latestStatus?.playing == true && !drawer.isOpen) screen.info.visibility = View.GONE
@@ -79,8 +89,8 @@ class MainActivity : Activity() {
         window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         preferences = Preferences(this)
         screen = PlayerScreen(this)
-        playback = PlaybackController(this, screen.player, preferences, ::renderPlayback)
-        drawer = ChannelDrawer(this, ::play, ::showActions, ::closeDrawer)
+        playback = PlaybackController(this, screen.player, preferences, ::renderPlayback, ::updateDrawer)
+        drawer = ChannelDrawer(this, { channel, group -> play(channel, group) }, ::showActions, ::closeDrawer, preferences::unavailableLabel)
         screen.root.addView(drawer.root, FrameLayout.LayoutParams(
             (resources.displayMetrics.widthPixels * 0.76f).toInt().coerceAtMost(dp(720)), MATCH_PARENT, Gravity.START))
         setContentView(screen.root)
@@ -142,10 +152,11 @@ class MainActivity : Activity() {
     }
 
     private fun updateDrawer() {
-        drawer.update(catalog?.index ?: CatalogIndex.EMPTY, preferences.favorites, preferences.defaultId, playback.channel?.id)
+        drawer.update(catalog?.index ?: CatalogIndex.EMPTY, preferences.favorites, preferences.defaultId, playback.channel?.id, playingGroup)
     }
 
-    private fun play(channel: Channel) {
+    private fun play(channel: Channel, group: String? = playingGroup) {
+        playingGroup = group?.takeIf { it in channel.groups } ?: channel.group
         closeDrawer()
         playback.select(channel)
         updateDrawer()
@@ -192,7 +203,7 @@ class MainActivity : Activity() {
         }
         val items = mutableListOf<Pair<String, () -> Unit>>()
         if (channel != null) {
-            items += "播放 ${channel.name}" to { play(channel) }
+            items += "播放 ${channel.name}" to { play(channel, if (drawer.isOpen) drawer.groupFor(channel) else playingGroup) }
             items += (if (channel.id == preferences.defaultId) "★ 已是默认频道：${channel.name}" else "设为默认频道：${channel.name}") to {
                 preferences.setDefault(channel)
                 updateDrawer()
@@ -213,6 +224,11 @@ class MainActivity : Activity() {
         items += "频道源状态" to { showSourceStatus() }
         items += (if (updater.state.phase == UpdatePhase.READY) "软件更新 · 新版已就绪" else "软件更新") to { showUpdateDialog() }
         items += "遥控器使用说明" to { showHelp() }
+        if (channel != null) items += (if (channel.id in preferences.disabledChannels) "取消不可用标记（恢复上下换台）" else "标记为不可用（上下换台跳过）") to {
+            val disabled = preferences.toggleDisabled(channel)
+            updateDrawer()
+            toast(if (disabled) "${channel.name} 已停用，仍可从菜单播放" else "${channel.name} 已取消停用标记")
+        }
         items += "退出应用" to { finish() }
         val title = "${channel?.name ?: "看电视"}  ·  默认：${preferences.defaultName ?: "CCTV1 / 首个可用频道"}"
         val nextDialog = AlertDialog.Builder(this).setTitle(title)
@@ -227,13 +243,19 @@ class MainActivity : Activity() {
         val choices = channel.streams.mapIndexed { index, stream ->
             val source = catalog?.sources?.firstOrNull { it.source.id == stream.sourceId }?.source?.name ?: stream.sourceId
             val host = runCatching { java.net.URI(stream.url).host }.getOrNull().orEmpty()
-            "线路 ${index + 1}  ·  $source\n$host"
+            val health = when (preferences.routeHealth.state(stream)) {
+                RouteState.UNKNOWN -> "未检测"
+                RouteState.AVAILABLE -> "可用"
+                RouteState.UNAVAILABLE -> "不可用（可重试）"
+            }
+            "线路 ${index + 1}  ·  $source  ·  $health\n$host"
         }.toTypedArray()
         val current = if (playback.channel?.id == channel.id) latestStatus?.routeIndex ?: 0 else 0
         showDialog(AlertDialog.Builder(this).setTitle("${channel.name} · 选择线路")
             .setSingleChoiceItems(choices, current) { choiceDialog, index ->
                 choiceDialog.dismiss()
                 dialog = null
+                playingGroup = (if (drawer.isOpen) drawer.groupFor(channel) else playingGroup)?.takeIf { it in channel.groups } ?: channel.group
                 closeDrawer()
                 playback.select(channel, index)
                 updateDrawer()
@@ -259,7 +281,7 @@ class MainActivity : Activity() {
 
     private fun showHelp() {
         showDialog(AlertDialog.Builder(this).setTitle("遥控器使用说明")
-            .setMessage("打开应用：自动播放指定的默认频道；首次优先 CCTV1。\n\n↑ / ↓：上一台 / 下一台\n确定：打开列表、播放选中频道\n← / →：上一条 / 下一条线路\n菜单：默认频道、收藏、线路、刷新\n列表中长按确定：设置选中频道\n数字键：输入频道编号后自动跳转\n播放 / 暂停键：暂停或继续\n返回：关闭列表；全屏连按两次退出\n\n播放失败会自动尝试同频道其他线路。IPv6 线路需要网络支持 IPv6。缓存可在源下载失败时继续选台，播放仍需要网络。")
+            .setMessage("打开应用：自动播放指定的默认频道；首次优先 CCTV1。\n\n↑ / ↓：当前分组上一台 / 下一台\n确定：打开列表、播放选中频道\n← / →：上一条 / 下一条线路\n菜单：默认频道、收藏、线路、停用、刷新\n列表分类列：上下连续切分类，右键进入频道\n列表第一行向上：搜索按钮，确定输入名称\n数字键：输入频道编号后自动跳转\n播放 / 暂停键：暂停或继续\n返回：关闭列表；全屏连按两次退出\n\nZ 为 zbds，I 为 iptv-org。线路失败或稳定播放 10 秒后记入本地。全部线路失败及手动停用的频道，上下换台会跳过，仍可在列表选择重试。成功播放可恢复自动判断；手动停用需在菜单取消。IPv6 线路需要网络支持 IPv6。观看仍需联网。")
             .setPositiveButton("知道了", null).create())
     }
 
@@ -351,12 +373,16 @@ class MainActivity : Activity() {
 
     private fun changeChannel(direction: Int) {
         val index = catalog?.index ?: CatalogIndex.EMPTY
-        val currentGroup = index.byId[playback.channel?.id]?.group
-        val channels = index.byGroup[currentGroup].orEmpty().ifEmpty { index.channels }
+        val currentGroup = playingGroup?.takeIf { it in index.byGroup }
+            ?: index.byId[playback.channel?.id]?.group ?: index.groups.firstOrNull()
+        val channels = index.byGroup[currentGroup].orEmpty()
         if (channels.isEmpty()) { openDrawer(); return }
-        val current = channels.indexOfFirst { it.id == playback.channel?.id }.coerceAtLeast(0)
-        val position = (current + direction + channels.size) % channels.size
-        play(channels[position])
+        val disabled = preferences.disabledChannels
+        val next = ChannelNavigation.next(channels, playback.channel?.id, direction) {
+            it.id !in disabled && !preferences.routeHealth.allUnavailable(it)
+        }
+        if (next != null) play(next)
+        else { showInfo(); toast("当前分组没有其他可切换频道，可从菜单选台") }
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {

@@ -26,7 +26,7 @@ git push origin v0.2.1
 
 `.github/workflows/release.yml` 执行测试、Release Lint、签名构建和签名验证，再创建 GitHub Release，上传 `iptv-player.apk` 和 `SHA256SUMS`。GitHub 为已上传资产提供摘要，客户端使用 API 摘要验证下载，不依赖加速站的返回值建立信任。
 
-版本为 `major.minor.patch`，`versionCode = major × 1,000,000 + minor × 1,000 + patch`；minor / patch 为 0–999，major 为 0–2000。标签、APK 版本必须一致，发布版本必须单调增加。当前版本 0.2.0 / 2000；下一版例如 v0.2.1 / 2001。不要修改同一 Release 的 APK 来替代发布新版本。
+版本为 `major.minor.patch`，`versionCode = major × 1,000,000 + minor × 1,000 + patch`；minor / patch 为 0–999，major 为 0–2000。标签、APK 版本必须一致，发布版本必须单调增加。当前版本 0.2.1 / 2001；下一版例如 v0.2.2 / 2002。不要修改同一 Release 的 APK 来替代发布新版本。
 
 本地有发布密钥时，可通过环境变量 `IPTV_STORE_FILE`（密钥路径）及后三个同名密码 / 别名环境变量构建：
 

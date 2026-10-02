@@ -14,6 +14,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import com.string.iptv.catalog.Channel
 import com.string.iptv.catalog.RouteCycle
+import com.string.iptv.catalog.RouteState
 import com.string.iptv.data.PlaylistRepository
 import com.string.iptv.data.Preferences
 import okhttp3.OkHttpClient
@@ -27,6 +28,7 @@ class PlaybackController(
     private val view: PlayerView,
     private val preferences: Preferences,
     private val onStatus: (PlaybackStatus) -> Unit,
+    private val onAvailabilityChanged: () -> Unit,
 ) {
     private val appContext = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
@@ -44,7 +46,11 @@ class PlaybackController(
     private val stablePlayback = Runnable {
         if (player?.isPlaying == true) {
             routes.recovered()
-            channel?.let { c -> c.streams.getOrNull(routes.current)?.let { preferences.rememberRoute(c.id, it.url) } }
+            channel?.let { c -> c.streams.getOrNull(routes.current)?.let {
+                preferences.rememberRoute(c.id, it.url)
+                preferences.routeHealth.record(it, RouteState.AVAILABLE)
+                onAvailabilityChanged()
+            } }
         }
     }
 
@@ -87,8 +93,8 @@ class PlaybackController(
 
     fun select(value: Channel, preferredRoute: Int? = null) {
         channel = value
-        val remembered = value.streams.indexOfFirst { it.url == preferences.goodRoute(value.id) }.coerceAtLeast(0)
-        routes = RouteCycle(value.streams.size, preferredRoute ?: remembered)
+        routes = if (preferredRoute != null) RouteCycle(value.streams.size, preferredRoute)
+            else RouteCycle(preferences.routeHealth.order(value, preferences.goodRoute(value.id)))
         paused = false
         failed = false
         playRoute()
@@ -116,6 +122,11 @@ class PlaybackController(
     private fun recover(reason: String) {
         handler.removeCallbacks(timeout)
         if (player == null || channel == null || paused || failed) return
+        handler.removeCallbacks(stablePlayback)
+        channel?.streams?.getOrNull(routes.current)?.let {
+            preferences.routeHealth.record(it, RouteState.UNAVAILABLE)
+            onAvailabilityChanged()
+        }
         if (routes.next() == null) {
             failed = true
             lastMessage = "$reason，已尝试全部线路。按确定换台，菜单键重试。"

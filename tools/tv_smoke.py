@@ -27,12 +27,15 @@ def main():
         raise ValueError("Use a dedicated emulator; this test clears application data")
     options.output.mkdir(parents=True, exist_ok=True)
     checks = []
-    state = {"fail_playlists": False}
+    state = {"fail_playlists": False, "recover_bad3": False}
     base = "http://10.0.2.2:8877"
     playlist = (
         f"央视频道,#genre#\nCCTV1,{base}/bad1\nCCTV1,{base}/sample.mp4?channel=1\n"
         f"CCTV2,{base}/sample.mp4?channel=2\nCCTV2,{base}/sample.mp4?channel=2b\n"
         f"CCTV3,{base}/bad3a\nCCTV3,{base}/bad3b\n"
+        f"卫视频道,#genre#\n湖南卫视,{base}/sample.mp4?hunan\n"
+        f"地方频道,#genre#\n地方台,{base}/sample.mp4?local\n"
+        f"测试组 A,#genre#\n测试台,{base}/sample.mp4?test\n"
     ).encode()
 
     class Handler(http.server.BaseHTTPRequestHandler):
@@ -56,7 +59,8 @@ def main():
                 if path == "/zbds4txt.playlist":
                     body = playlist
                 elif path == "/iptvorg.playlist":
-                    body = f'#EXTM3U\n#EXTINF:-1 tvg-id="CCTV2.cn" group-title="央视频道",CCTV2\n{base}/sample.mp4?channel=2\n'.encode()
+                    body = (f'#EXTM3U\n#EXTINF:-1 tvg-id="CCTV2.cn" group-title="央视频道",CCTV2\n{base}/sample.mp4?channel=2\n'
+                            f'#EXTINF:-1 group-title="海外频道",Global TV\n{base}/sample.mp4?global\n').encode()
                 else:
                     self.send_error(403)
                     return
@@ -65,7 +69,7 @@ def main():
                 self.end_headers()
                 self.wfile.write(body)
                 return
-            if path != "/sample.mp4":
+            if path != "/sample.mp4" and not (state["recover_bad3"] and path in ("/bad3a", "/bad3b")):
                 self.send_error(404)
                 return
             size = options.media.stat().st_size
@@ -124,6 +128,14 @@ def main():
     def texts():
         return [n.get("text", "") for n in dump().iter("node")]
 
+    def focused():
+        return [n for n in dump().iter("node") if n.get("focused") == "true"]
+
+    def assert_focus(text=None, class_name=None):
+        nodes = focused()
+        assert any((text is None or n.get("text") == text) and
+                   (class_name is None or n.get("class") == class_name) for n in nodes), [n.attrib for n in nodes]
+
     def wait_for(description, predicate, timeout=25):
         end = time.monotonic() + timeout
         last = []
@@ -161,6 +173,41 @@ def main():
         key(23)
         wait_for("one OK press leaves channel drawer open", lambda values: any("当前分类" in v for v in values))
         screenshot("drawer")
+        key(19)
+        assert_focus("搜索")
+        key(23)
+        assert_focus(class_name="android.widget.EditText")
+        adb("shell", "input", "text", "CCTV-2")
+        key(66)
+        wait_for("DPAD up and OK reach search without a dedicated search key",
+                 lambda values: any("名称搜索 1 个" in v for v in values) and any("CCTV2" in v for v in values))
+        key(21)
+        assert_focus("Z · 央视频道")
+        categories = ["Z · 卫视频道", "Z · 地方频道", "Z · 测试组 A", "I · 央视频道", "I · 海外频道"]
+        for category in categories:
+            key(20)
+            assert_focus(category)
+        for category in reversed(["Z · 央视频道", *categories[:-1]]):
+            key(19)
+            assert_focus(category)
+        wait_for("categories keep focus through five down and five up presses with ZBDS before IPTV.org",
+                 lambda values: any("当前分类 3 个" in v for v in values))
+        screenshot("source-groups-focus")
+        key(20, 20, 20, 20)
+        wait_for("rapid category keys finish on the selected IPTV.org group", lambda values: any("当前分类 1 个" in v for v in values))
+        assert_focus("I · 央视频道")
+        key(22)
+        assert_focus("002   CCTV2")
+        key(23, 165)
+        wait_for("shared channel can be selected through its IPTV.org group", lambda values: "CCTV2" in values and any("正在直播" in v for v in values))
+        key(20, 165)
+        wait_for("direct channel navigation retains the selected source group", lambda values: "CCTV2" in values)
+        key(23)
+        wait_for("reopening the drawer follows the selected source group", lambda values: any("当前分类 1 个" in v for v in values))
+        key(21)
+        assert_focus("I · 央视频道")
+        key(19, 19, 19, 19)
+        key(22)
         key(20, 82)
         wait_for("menu applies to highlighted CCTV2", lambda values: "设为默认频道：CCTV2" in values)
         menu_row(1)
@@ -186,6 +233,44 @@ def main():
         launch()
         wait_for("cached default still plays when every playlist server fails",
                  lambda values: "CCTV2" in values and any("正在直播" in v for v in values))
+        key(20, 165)
+        wait_for("cached all-failed channel is skipped by direct channel-down after process restart",
+                 lambda values: "CCTV1" in values and any("正在直播" in v for v in values))
+        health = adb("shell", "run-as", "com.string.iptv", "cat", "shared_prefs/route_health.xml")
+        assert health.count("UNAVAILABLE") >= 3, health
+        key(82)
+        wait_for("menu can manually disable the playing channel", lambda values: "标记为不可用（上下换台跳过）" in values)
+        menu_row(9)
+        key(20, 165)
+        wait_for("manual disable still allows leaving the channel", lambda values: "CCTV2" in values)
+        launch()
+        wait_for("default survives restart with manual and automatic exclusions", lambda values: "CCTV2" in values and any("正在直播" in v for v in values))
+        key(20, 165)
+        wait_for("channel-down stays on current station when every other station is excluded", lambda values: "CCTV2" in values)
+        key(8)  # Android KEYCODE_1: channel 001 is manually disabled.
+        wait_for("an unavailable numeric channel opens the menu without directly tuning it",
+                 lambda values: any("当前分类" in v for v in values))
+        assert any(n.get("selected") == "true" and "CCTV2" in n.get("text", "") for n in dump().iter("node"))
+        key(4)
+        key(23)
+        wait_for("menu keeps failed and manually disabled stations visible",
+                 lambda values: any("CCTV1" in v and "手动停用" in v for v in values) and any("CCTV3" in v and "全部线路失败" in v for v in values))
+        screenshot("unavailable-markers")
+        key(19, 23)
+        wait_for("manually disabled station is still selectable from the drawer", lambda values: "CCTV1" in values and any("正在直播" in v for v in values))
+        key(82)
+        wait_for("manual marker survives playback and offers undo", lambda values: "取消不可用标记（恢复上下换台）" in values)
+        menu_row(9)
+        state["recover_bad3"] = True
+        key(23)
+        key(20, 20, 23)
+        wait_for("all-failed station can be retried manually after its server recovers", lambda values: "CCTV3" in values and any("正在直播" in v for v in values))
+        time.sleep(10.5)
+        key(23)
+        wait_for("ten seconds of successful playback clears automatic exclusion",
+                 lambda values: any("CCTV3" in v for v in values) and not any("全部线路失败" in v for v in values))
+        key(4, 19, 20, 165)
+        wait_for("recovered station returns to direct channel navigation", lambda values: "CCTV3" in values and any("正在直播" in v for v in values))
         key(82)
         menu_row(6)
         wait_for("source failures retain cached channels and show status",

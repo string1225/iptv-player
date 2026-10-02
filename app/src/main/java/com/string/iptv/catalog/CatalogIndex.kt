@@ -6,7 +6,11 @@ import java.util.Locale
 class CatalogIndex(val channels: List<Channel>) {
     val byId = channels.associateBy { it.id }
     val numbers = channels.mapIndexed { index, channel -> channel.id to index + 1 }.toMap()
-    val byGroup = channels.groupBy { it.group }
+    val byGroup: Map<String, List<Channel>> = buildMap<String, MutableList<Channel>> {
+        channels.forEach { channel ->
+            channel.groups.distinct().forEach { getOrPut(it) { mutableListOf() }.add(channel) }
+        }
+    }.entries.sortedBy { SourceGroups.rank(it.key) }.associate { it.key to it.value.toList() }
     val groups = byGroup.keys.toList()
     private val names = channels.map { normalize(it.name) + "\n" + normalize(it.id) }
 

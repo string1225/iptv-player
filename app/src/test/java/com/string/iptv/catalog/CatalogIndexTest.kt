@@ -36,4 +36,16 @@ class CatalogIndexTest {
         assertEquals(listOf("station1", "station3"), index.favorites(setOf("station3", "missing", "station1")).map { it.id })
         assertEquals(1, ChannelPage.from(emptyList(), -3).pages)
     }
+
+    @Test fun sourceFamiliesHaveSeparateGroupsWithZbdsFirstAndStableSharedChannels() {
+        val entries = PlaylistParser.parse("央视频道,#genre#\nCCTV1,https://example.com/global", "iptvorg") +
+            PlaylistParser.parse("央视频道,#genre#\nCCTV1,https://example.com/local\n卫视频道,#genre#\n湖南卫视,https://example.com/hunan", "zbds4txt")
+        val index = CatalogIndex(CatalogMerger.merge(entries))
+        assertEquals(listOf("Z · 央视频道", "Z · 卫视频道", "I · 央视频道"), index.groups)
+        val cctv = index.byId.getValue("cctv1")
+        assertEquals(2, cctv.streams.size)
+        assertSame(cctv, index.byGroup.getValue("Z · 央视频道").single())
+        assertSame(cctv, index.byGroup.getValue("I · 央视频道").single())
+        assertEquals(1, index.search("cctv1").size)
+    }
 }

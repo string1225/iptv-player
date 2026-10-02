@@ -27,9 +27,10 @@ import java.util.concurrent.Future
 
 class ChannelDrawer(
     private val context: Context,
-    private val onSelect: (Channel) -> Unit,
+    private val onSelect: (Channel, String?) -> Unit,
     private val onActions: (Channel?) -> Unit,
     private val onClose: () -> Unit,
+    private val unavailableLabel: (Channel) -> String?,
 ) {
     val root = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
@@ -56,6 +57,7 @@ class ChannelDrawer(
         background = TvStyle.shape(Color.rgb(30, 42, 55), 12f)
         id = View.generateViewId()
     }
+    private val searchButton = TvStyle.button(context, "搜索", ::focusSearch).apply { id = View.generateViewId() }
     private val groupsView = RecyclerView(context).apply { layoutManager = LinearLayoutManager(context); id = View.generateViewId(); itemAnimator = null }
     private val channelsView = RecyclerView(context).apply { layoutManager = LinearLayoutManager(context); id = View.generateViewId(); itemAnimator = null }
     private val empty = TvStyle.text(context, "暂无频道，请在菜单中刷新", 16f, TvStyle.muted).apply { gravity = Gravity.CENTER; visibility = View.GONE }
@@ -70,9 +72,11 @@ class ChannelDrawer(
     private var favoriteIds = emptySet<String>()
     private var defaultId: String? = null
     private var playingId: String? = null
+    private var playingGroup: String? = null
     private var dirty = true
     private var loading = false
     private var focusAfterLoad = false
+    private var focusRequest = 0
     var focusedChannel: Channel? = null
         private set
     private val groupAdapter = GroupsAdapter()
@@ -82,14 +86,25 @@ class ChannelDrawer(
     init {
         val heading = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         heading.addView(TvStyle.text(context, "看电视", 28f, bold = true), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-        heading.addView(TvStyle.button(context, "搜索", ::focusSearch))
-        heading.addView(TvStyle.button(context, "菜单") { onActions(focusedChannel ?: index.byId[playingId]) })
-        heading.addView(TvStyle.button(context, "关闭", onClose))
+        heading.addView(searchButton)
+        val actionsButton = TvStyle.button(context, "菜单") { onActions(focusedChannel ?: index.byId[playingId]) }.apply { id = View.generateViewId() }
+        val closeButton = TvStyle.button(context, "关闭", onClose).apply { id = View.generateViewId() }
+        heading.addView(actionsButton)
+        heading.addView(closeButton)
+        searchButton.nextFocusRightId = actionsButton.id
+        actionsButton.nextFocusLeftId = searchButton.id
+        actionsButton.nextFocusRightId = closeButton.id
+        closeButton.nextFocusLeftId = actionsButton.id
+        listOf(searchButton, actionsButton, closeButton).forEach { it.nextFocusDownId = search.id }
+        search.nextFocusUpId = searchButton.id
+        searchButton.setOnFocusChangeListener { _, focused ->
+            if (focused) { focusRequest++; focusAfterLoad = false }
+        }
         root.addView(heading)
         root.addView(count, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = context.dp(4); bottomMargin = context.dp(12) })
         root.addView(search, LinearLayout.LayoutParams(MATCH_PARENT, context.dp(42)))
         val content = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; isBaselineAligned = false }
-        content.addView(groupsView, LinearLayout.LayoutParams(context.dp(140), MATCH_PARENT))
+        content.addView(groupsView, LinearLayout.LayoutParams(context.dp(160), MATCH_PARENT))
         content.addView(channelsView, LinearLayout.LayoutParams(0, MATCH_PARENT, 1f).apply { leftMargin = context.dp(16) })
         root.addView(content, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f).apply { topMargin = context.dp(12) })
         root.addView(empty, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
@@ -101,6 +116,15 @@ class ChannelDrawer(
         root.addView(TvStyle.text(context, "确定 播放   ·   菜单 设置默认   ·   频道 +/- 翻页   ·   返回 关闭", 12f, TvStyle.muted))
         groupsView.adapter = groupAdapter
         channelsView.adapter = channelAdapter
+        search.setOnKeyListener { _, code, event ->
+            if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                if (event.action == KeyEvent.ACTION_DOWN) {
+                    hideKeyboard()
+                    if (search.text.isNotBlank()) filter(focusAfter = true) else focusGroup()
+                }
+                true
+            } else false
+        }
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
@@ -119,19 +143,29 @@ class ChannelDrawer(
         }
     }
 
-    fun update(catalog: CatalogIndex, favorites: Set<String>, default: String?, playing: String?) {
+    fun update(catalog: CatalogIndex, favorites: Set<String>, default: String?, playing: String?, sourceGroup: String?) {
         val changed = index !== catalog || favoriteIds != favorites
         index = catalog
         favoriteIds = favorites
         defaultId = default
         playingId = playing
+        playingGroup = sourceGroup
         if (changed) {
-            groups = catalog.groups + FAVORITES
-            if (group !in groups) group = catalog.byId[playing]?.group ?: catalog.groups.firstOrNull() ?: FAVORITES
+            val nextGroups = catalog.groups + FAVORITES
+            val groupsChanged = groups != nextGroups
+            val hadGroupFocus = groupsView.hasFocus()
+            groups = nextGroups
+            if (group !in groups) group = sourceGroup?.takeIf { it in groups } ?: catalog.byId[playing]?.group ?: catalog.groups.firstOrNull() ?: FAVORITES
             focusedChannel = focusedChannel?.let { catalog.byId[it.id] }
             dirty = true
-            if (isOpen) { groupAdapter.notifyDataSetChanged(); filter() }
-        } else if (isOpen) channelAdapter.notifyDataSetChanged() // At most 100 rows, only markers change.
+            if (isOpen) {
+                if (groupsChanged) {
+                    groupAdapter.notifyDataSetChanged()
+                    if (hadGroupFocus) groupsView.post { focusGroup() }
+                } else refreshGroupMarkers()
+                filter()
+            }
+        } else if (isOpen) channelAdapter.notifyItemRangeChanged(0, channelAdapter.itemCount)
     }
 
     private fun invalidateSearch() {
@@ -199,7 +233,10 @@ class ChannelDrawer(
     fun show() {
         root.visibility = View.VISIBLE
         // First open follows the playing channel's group, never an unbounded global list.
-        if (results.isEmpty() && search.text.isEmpty()) group = index.byId[playingId]?.group ?: group
+        if (search.text.isEmpty()) {
+            val targetGroup = playingGroup ?: index.byId[playingId]?.group ?: group
+            if (targetGroup != group) { group = targetGroup; dirty = true }
+        }
         groupAdapter.notifyDataSetChanged()
         if (dirty || results.none { it.id == playingId }) filter(focusAfter = true, target = playingId)
         else {
@@ -210,21 +247,54 @@ class ChannelDrawer(
     }
 
     fun focusSearch() {
+        focusRequest++
+        focusAfterLoad = false
         search.requestFocus()
         (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).showSoftInput(search, InputMethodManager.SHOW_IMPLICIT)
     }
 
+    fun groupFor(channel: Channel): String? = group?.takeIf { it in channel.groups }
+
+    private fun hideKeyboard() {
+        (context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(search.windowToken, 0)
+    }
+
+    private fun focusGroup(position: Int = groups.indexOf(group).coerceAtLeast(0)) {
+        focusRequest++
+        focusAfterLoad = false
+        if (groups.isEmpty()) { searchButton.requestFocus(); return }
+        val target = position.coerceIn(0, groups.lastIndex)
+        val holder = groupsView.findViewHolderForAdapterPosition(target)
+        if (holder != null) holder.itemView.requestFocus()
+        else {
+            groupsView.scrollToPosition(target)
+            groupsView.post { groupsView.findViewHolderForAdapterPosition(target)?.itemView?.requestFocus() }
+        }
+    }
+
+    private fun refreshGroupMarkers() {
+        // Changing the category must not invalidate the RecyclerView's focused row.
+        for (child in 0 until groupsView.childCount) {
+            val holder = groupsView.getChildViewHolder(groupsView.getChildAt(child)) as TextHolder
+            holder.text.isSelected = groups.getOrNull(holder.bindingAdapterPosition) == group
+        }
+    }
+
     private fun focusChannel(index: Int = 0) {
         if (loading) { focusAfterLoad = true; return }
+        val revision = generation
+        val request = ++focusRequest
         val position = index.coerceIn(0, (page.channels.size - 1).coerceAtLeast(0))
         channelsView.scrollToPosition(position)
         channelsView.post {
+            if (!isOpen || loading || revision != generation || request != focusRequest) return@post
             val holder = channelsView.findViewHolderForAdapterPosition(position)
             if (holder != null) {
                 if (holder.itemView.requestFocus()) focusedChannel = page.channels.getOrNull(position)
             }
             else if (page.channels.isEmpty()) search.requestFocus()
             else channelsView.post {
+                if (!isOpen || loading || revision != generation || request != focusRequest) return@post
                 if (channelsView.findViewHolderForAdapterPosition(position)?.itemView?.requestFocus() == true)
                     focusedChannel = page.channels.getOrNull(position)
             }
@@ -237,20 +307,32 @@ class ChannelDrawer(
 
     private inner class GroupsAdapter : RecyclerView.Adapter<TextHolder>() {
         override fun getItemCount() = groups.size
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = TextHolder(TvStyle.text(context, "", 15f).apply {
-            layoutParams = RecyclerView.LayoutParams(MATCH_PARENT, context.dp(46)).apply { bottomMargin = context.dp(6) }
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = TextHolder(TvStyle.text(context, "", 14f).apply {
+            layoutParams = RecyclerView.LayoutParams(MATCH_PARENT, context.dp(58)).apply { bottomMargin = context.dp(6) }
             setPadding(context.dp(12), 0, context.dp(8), 0)
             background = TvStyle.focusBackground()
             setTextColor(TvStyle.focusText())
             isFocusable = true; isFocusableInTouchMode = true; isClickable = true
-            setOnKeyListener { _, code, event ->
-                if (code == KeyEvent.KEYCODE_DPAD_RIGHT && event.action == KeyEvent.ACTION_DOWN) { focusChannel(); true } else false
-            }
+            maxLines = 2
         })
         override fun onBindViewHolder(holder: TextHolder, position: Int) {
             val value = groups[position]
             holder.text.text = if (value == FAVORITES) "我的收藏" else value
             holder.text.isSelected = group == value
+            holder.text.setOnKeyListener { _, code, event ->
+                when (code) {
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> { if (event.action == KeyEvent.ACTION_DOWN) focusChannel(); true }
+                    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        if (event.action == KeyEvent.ACTION_DOWN) {
+                            val row = holder.bindingAdapterPosition
+                            if (code == KeyEvent.KEYCODE_DPAD_UP && row == 0) searchButton.requestFocus()
+                            else focusGroup(row + if (code == KeyEvent.KEYCODE_DPAD_UP) -1 else 1)
+                        }
+                        true
+                    }
+                    else -> false
+                }
+            }
             fun choose() {
                 if (group != value || search.text.isNotEmpty()) {
                     group = value
@@ -258,7 +340,7 @@ class ChannelDrawer(
                     focusedChannel = null
                     page = ChannelPage.from(emptyList(), 0)
                     filter()
-                    groupsView.post { notifyDataSetChanged() }
+                    refreshGroupMarkers()
                 }
             }
             holder.text.setOnFocusChangeListener { _, hasFocus -> if (hasFocus) choose() }
@@ -276,27 +358,26 @@ class ChannelDrawer(
             isFocusable = true; isFocusableInTouchMode = true; isClickable = true; isLongClickable = true
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
-            setOnKeyListener { _, code, event ->
-                if (code == KeyEvent.KEYCODE_DPAD_LEFT && event.action == KeyEvent.ACTION_DOWN) {
-                    val position = groups.indexOf(group).coerceAtLeast(0)
-                    val holder = groupsView.findViewHolderForAdapterPosition(position)
-                    if (holder != null) holder.itemView.requestFocus()
-                    else {
-                        groupsView.scrollToPosition(position)
-                        groupsView.post { groupsView.findViewHolderForAdapterPosition(position)?.itemView?.requestFocus() }
-                    }
-                    true
-                } else false
-            }
         })
         override fun onBindViewHolder(holder: TextHolder, position: Int) {
             val channel = page.channels[position]
-            holder.text.text = "${index.numbers[channel.id].toString().padStart(3, '0')}   ${channel.name}${if (channel.id == defaultId) "  ★" else ""}${if (channel.id in favoriteIds) "  ♥" else ""}"
+            val unavailable = unavailableLabel(channel)
+            holder.text.text = "${index.numbers[channel.id].toString().padStart(3, '0')}   ${channel.name}${if (channel.id == defaultId) "  ★" else ""}${if (channel.id in favoriteIds) "  ♥" else ""}${unavailable?.let { "  [$it]" }.orEmpty()}"
             holder.text.isSelected = channel.id == playingId
             if (holder.text.hasFocus() && !loading) focusedChannel = channel
-            holder.text.contentDescription = "${channel.name}，${channel.streams.size} 条线路${if (channel.id == defaultId) "，默认频道" else ""}"
+            holder.text.contentDescription = "${channel.name}，${channel.streams.size} 条线路${if (channel.id == defaultId) "，默认频道" else ""}${unavailable?.let { "，$it，仍可选择播放" }.orEmpty()}"
+            holder.text.setOnKeyListener { _, code, event ->
+                when {
+                    code == KeyEvent.KEYCODE_DPAD_LEFT -> { if (event.action == KeyEvent.ACTION_DOWN) focusGroup(); true }
+                    code == KeyEvent.KEYCODE_DPAD_UP && holder.bindingAdapterPosition == 0 -> {
+                        if (event.action == KeyEvent.ACTION_DOWN) searchButton.requestFocus()
+                        true
+                    }
+                    else -> false
+                }
+            }
             holder.text.setOnFocusChangeListener { _, hasFocus -> if (hasFocus && !loading) focusedChannel = channel }
-            holder.text.setOnClickListener { if (!loading) onSelect(channel) }
+            holder.text.setOnClickListener { if (!loading) onSelect(channel, group?.takeIf { it in channel.groups }) }
             holder.text.setOnLongClickListener { if (!loading) onActions(channel); true }
         }
     }

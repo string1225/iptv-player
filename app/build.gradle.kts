@@ -10,7 +10,7 @@ android {
         applicationId = "com.string.iptv"
         minSdk = 29
         targetSdk = 36
-        val appVersion = providers.gradleProperty("appVersion").orElse("0.2.0").get()
+        val appVersion = providers.gradleProperty("appVersion").orElse("0.2.1").get()
         require(appVersion.matches(Regex("\\d+\\.\\d+\\.\\d+")))
         val parts = appVersion.split('.').map(String::toInt)
         require(parts[0] in 0..2000 && parts[1] in 0..999 && parts[2] in 0..999)
