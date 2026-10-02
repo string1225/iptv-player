@@ -3,6 +3,9 @@ package com.string.iptv
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import android.os.Bundle
 import android.os.Build
 import android.os.Handler
@@ -16,6 +19,7 @@ import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.media3.common.util.UnstableApi
 import com.string.iptv.catalog.Channel
+import com.string.iptv.catalog.CatalogIndex
 import com.string.iptv.catalog.StartupChannel
 import com.string.iptv.data.CatalogSnapshot
 import com.string.iptv.data.PlaylistRepository
@@ -25,6 +29,10 @@ import com.string.iptv.playback.PlaybackStatus
 import com.string.iptv.ui.ChannelDrawer
 import com.string.iptv.ui.PlayerScreen
 import com.string.iptv.ui.TvStyle.dp
+import com.string.iptv.update.UpdateManager
+import com.string.iptv.update.UpdatePhase
+import com.string.iptv.update.UpdateState
+import androidx.core.content.FileProvider
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -36,6 +44,10 @@ class MainActivity : Activity() {
     private lateinit var drawer: ChannelDrawer
     private lateinit var playback: PlaybackController
     private lateinit var repository: PlaylistRepository
+    private lateinit var updater: UpdateManager
+    private var updateDialog: AlertDialog? = null
+    private var pendingInstallPermission = false
+    private var notifiedUpdate: String? = null
     private var catalog: CatalogSnapshot? = null
     private var latestStatus: PlaybackStatus? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -74,6 +86,7 @@ class MainActivity : Activity() {
         setContentView(screen.root)
         screen.root.setOnClickListener { openDrawer() }
         repository = PlaylistRepository(this, ::acceptCatalog)
+        updater = UpdateManager(this, preferences, ::renderUpdate)
         if (Build.VERSION.SDK_INT >= 33) {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { handleBack() }
         }
@@ -81,16 +94,27 @@ class MainActivity : Activity() {
         repository.refresh()
     }
 
-    override fun onStart() { super.onStart(); playback.start() }
+    override fun onStart() { super.onStart(); playback.start(); updater.start() }
+    override fun onResume() {
+        super.onResume()
+        if (pendingInstallPermission) {
+            pendingInstallPermission = false
+            if (packageManager.canRequestPackageInstalls()) installUpdate()
+            else toast("安装权限未开启，稍后可在软件更新中重试")
+        }
+    }
     override fun onStop() {
         handler.removeCallbacks(hideInfo)
         handler.removeCallbacks(tuneNumber)
         digits = ""
         playback.stop()
+        updater.stop()
         super.onStop()
     }
     override fun onDestroy() {
         repository.close()
+        drawer.close()
+        updater.close()
         playback.stop()
         handler.removeCallbacksAndMessages(null)
         dialog?.dismiss()
@@ -103,7 +127,7 @@ class MainActivity : Activity() {
         if (playback.channel == null) {
             // A saved default must get a chance to arrive from every source on a cold start.
             val configured = preferences.defaultId
-            val ready = snapshot.channels.any { it.id == configured } ||
+            val ready = snapshot.fromCache || snapshot.index.byId.containsKey(configured) ||
                 configured == null && snapshot.channels.any { it.id == "cctv1" } || !snapshot.refreshing
             if (ready) {
                 StartupChannel.choose(snapshot.channels, configured)?.let {
@@ -118,7 +142,7 @@ class MainActivity : Activity() {
     }
 
     private fun updateDrawer() {
-        drawer.update(catalog?.channels.orEmpty(), preferences.favorites, preferences.defaultId, playback.channel?.id)
+        drawer.update(catalog?.index ?: CatalogIndex.EMPTY, preferences.favorites, preferences.defaultId, playback.channel?.id)
     }
 
     private fun play(channel: Channel) {
@@ -164,7 +188,7 @@ class MainActivity : Activity() {
             currentFocus?.isPressed = false
         }
         val channel = (selected ?: playback.channel)?.let { value ->
-            catalog?.channels?.firstOrNull { it.id == value.id } ?: value
+            catalog?.index?.byId?.get(value.id) ?: value
         }
         val items = mutableListOf<Pair<String, () -> Unit>>()
         if (channel != null) {
@@ -183,10 +207,11 @@ class MainActivity : Activity() {
             items += "选择播放线路（${channel.streams.size} 条）" to { showRoutes(channel) }
         }
         if (playback.channel != null) items += "重试当前频道" to {
-            playback.channel?.let { current -> play(catalog?.channels?.firstOrNull { it.id == current.id } ?: current) }
+            playback.channel?.let { current -> play(catalog?.index?.byId?.get(current.id) ?: current) }
         }
         items += "刷新全部频道源" to { repository.refresh(); toast("正在后台刷新频道") }
         items += "频道源状态" to { showSourceStatus() }
+        items += (if (updater.state.phase == UpdatePhase.READY) "软件更新 · 新版已就绪" else "软件更新") to { showUpdateDialog() }
         items += "遥控器使用说明" to { showHelp() }
         items += "退出应用" to { finish() }
         val title = "${channel?.name ?: "看电视"}  ·  默认：${preferences.defaultName ?: "CCTV1 / 首个可用频道"}"
@@ -238,20 +263,100 @@ class MainActivity : Activity() {
             .setPositiveButton("知道了", null).create())
     }
 
+    private fun renderUpdate(state: UpdateState) {
+        updateDialog?.takeIf { it.isShowing }?.let(::renderUpdateDialog)
+        if (state.phase == UpdatePhase.READY && state.release?.tag != notifiedUpdate) {
+            notifiedUpdate = state.release?.tag
+            toast("新版 ${state.release?.version} 已就绪，菜单 → 软件更新可安装")
+        }
+    }
+
+    private fun showUpdateDialog() {
+        val value = AlertDialog.Builder(this).setTitle("软件更新")
+            .setMessage("").setPositiveButton("检查更新", null)
+            .setNeutralButton("自动更新", null).setNegativeButton("关闭", null).create()
+        updateDialog = value
+        showDialog(value)
+        value.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
+            preferences.autoUpdate = !preferences.autoUpdate
+            renderUpdateDialog(value)
+            if (preferences.autoUpdate) updater.check(false)
+        }
+        value.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            when (updater.state.phase) {
+                UpdatePhase.CHECKING, UpdatePhase.DOWNLOADING -> Unit
+                UpdatePhase.READY -> installUpdate()
+                UpdatePhase.AVAILABLE -> updater.download()
+                UpdatePhase.ERROR -> if (updater.state.release != null) updater.download() else updater.check()
+                else -> updater.check()
+            }
+        }
+        renderUpdateDialog(value)
+        value.getButton(AlertDialog.BUTTON_POSITIVE).requestFocus()
+    }
+
+    private fun renderUpdateDialog(value: AlertDialog) {
+        val state = updater.state
+        val time = preferences.lastUpdateCheck.takeIf { it > 0 }?.let {
+            SimpleDateFormat("MM-dd HH:mm", Locale.CHINA).format(Date(it))
+        } ?: "尚未检查"
+        value.setTitle("软件更新 · 当前 ${BuildConfig.VERSION_NAME}")
+        value.setMessage("${state.message}\n\n上次检查：$time\n自动更新开启时，每 6 小时后台检查并下载；安装需系统确认。\n下载优先使用 gh-proxy.org，失败回退 GitHub。${state.release?.notes?.takeIf { it.isNotBlank() }?.let { "\n\n更新说明\n$it" }.orEmpty()}")
+        value.getButton(AlertDialog.BUTTON_NEUTRAL).text = "自动更新：${if (preferences.autoUpdate) "已开启" else "已关闭"}"
+        value.getButton(AlertDialog.BUTTON_POSITIVE).apply {
+            text = when (state.phase) {
+                UpdatePhase.READY -> "安装新版"
+                UpdatePhase.AVAILABLE -> "下载新版"
+                UpdatePhase.ERROR -> "重试"
+                UpdatePhase.CHECKING -> "检查中…"
+                UpdatePhase.DOWNLOADING -> "下载中…"
+                else -> "检查更新"
+            }
+            // Keep remote focus on the action while it runs; disabling it jumps focus
+            // to the automatic-update switch and can accidentally toggle that setting.
+            isEnabled = true
+        }
+    }
+
+    private fun installUpdate() {
+        val file = updater.state.file?.takeIf { it.isFile } ?: return
+        try {
+            if (!packageManager.canRequestPackageInstalls()) {
+                pendingInstallPermission = true
+                startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                return
+            }
+            val uri = FileProvider.getUriForFile(this, "$packageName.updates", file)
+            startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        } catch (_: android.content.ActivityNotFoundException) {
+            pendingInstallPermission = false
+            toast("设备没有可用的安装 / 授权界面")
+        } catch (_: SecurityException) {
+            pendingInstallPermission = false
+            toast("设备策略阻止安装，请检查系统设置")
+        }
+    }
+
     private fun showDialog(value: AlertDialog) {
         dialog?.dismiss()
         dialog = value
-        value.setOnDismissListener { if (dialog === value) dialog = null }
+        value.setOnDismissListener {
+            if (dialog === value) dialog = null
+            if (updateDialog === value) updateDialog = null
+        }
         value.show()
         value.listView?.requestFocus()
     }
 
     private fun changeChannel(direction: Int) {
-        val channels = catalog?.channels.orEmpty()
+        val index = catalog?.index ?: CatalogIndex.EMPTY
+        val currentGroup = index.byId[playback.channel?.id]?.group
+        val channels = index.byGroup[currentGroup].orEmpty().ifEmpty { index.channels }
         if (channels.isEmpty()) { openDrawer(); return }
         val current = channels.indexOfFirst { it.id == playback.channel?.id }.coerceAtLeast(0)
-        val index = (current + direction + channels.size) % channels.size
-        play(channels[index])
+        val position = (current + direction + channels.size) % channels.size
+        play(channels[position])
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -269,6 +374,12 @@ class MainActivity : Activity() {
             return true
         }
         if (drawer.isOpen) {
+            if (key == KeyEvent.KEYCODE_ENTER && down && currentFocus is android.widget.EditText) ignoreSelectRelease = true
+            if (key == KeyEvent.KEYCODE_CHANNEL_UP || key == KeyEvent.KEYCODE_CHANNEL_DOWN) {
+                if (down && event.repeatCount == 0) drawer.changePage(if (key == KeyEvent.KEYCODE_CHANNEL_UP) -1 else 1)
+                return true
+            }
+            if (key == KeyEvent.KEYCODE_SEARCH) { if (down) drawer.focusSearch(); return true }
             if (select && down && event.isLongPress) {
                 showActions(drawer.focusedChannel)
                 return true

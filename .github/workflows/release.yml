@@ -1,0 +1,49 @@
+name: Release APK
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Install Android SDK packages
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+      - name: Prepare persistent release signing key
+        env:
+          SIGNING_KEY: ${{ secrets.IPTV_KEYSTORE_BASE64 }}
+          IPTV_STORE_PASSWORD: ${{ secrets.IPTV_STORE_PASSWORD }}
+          IPTV_KEY_ALIAS: ${{ secrets.IPTV_KEY_ALIAS }}
+          IPTV_KEY_PASSWORD: ${{ secrets.IPTV_KEY_PASSWORD }}
+        run: |
+          for name in SIGNING_KEY IPTV_STORE_PASSWORD IPTV_KEY_ALIAS IPTV_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then echo "Missing release signing secret: $name"; exit 1; fi
+          done
+          printf '%s' "$SIGNING_KEY" | base64 --decode > "$RUNNER_TEMP/iptv-release.jks"
+      - name: Verify and build signed APK
+        env:
+          IPTV_STORE_FILE: ${{ runner.temp }}/iptv-release.jks
+          IPTV_STORE_PASSWORD: ${{ secrets.IPTV_STORE_PASSWORD }}
+          IPTV_KEY_ALIAS: ${{ secrets.IPTV_KEY_ALIAS }}
+          IPTV_KEY_PASSWORD: ${{ secrets.IPTV_KEY_PASSWORD }}
+        run: |
+          ./gradlew :app:testDebugUnitTest :app:lintRelease :app:assembleRelease -PappVersion="${GITHUB_REF_NAME#v}" --console=plain
+          cp app/build/outputs/apk/release/app-release.apk iptv-player.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify iptv-player.apk
+          sha256sum iptv-player.apk > SHA256SUMS
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" iptv-player.apk SHA256SUMS --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
+      - name: Remove temporary signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/iptv-release.jks"

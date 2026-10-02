@@ -36,6 +36,14 @@ def main():
     ).encode()
 
     class Handler(http.server.BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def handle(self):
+            try:
+                super().handle()
+            except ConnectionError:
+                pass  # Expected when the test force-stops the app.
+
         def log_message(self, *unused):
             pass
 

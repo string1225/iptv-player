@@ -35,24 +35,27 @@ data class Channel(
 object ChannelIdentity {
     private val quality = Regex("\\s*[（(](?:\\d{3,4}p|[248]K|HD|SD|高清|标清)[）)]", RegexOption.IGNORE_CASE)
     private val cctv = Regex("^cctv[- _]*(\\d{1,2})(\\+?)(?:[- _]*(?:hd|sd|高清|标清|超清))?$", RegexOption.IGNORE_CASE)
+    private val whitespace = Regex("\\s+")
 
     fun key(name: String): String {
         val cleaned = name.replace(quality, "").trim().lowercase(Locale.ROOT)
         val match = cctv.matchEntire(cleaned)
         return if (match != null) "cctv${match.groupValues[1].toInt()}${match.groupValues[2]}"
-        else cleaned.replace(Regex("\\s+"), " ")
+        else cleaned.replace(whitespace, " ")
     }
 }
 
 object CatalogMerger {
+    private val cctvKey = Regex("cctv\\d+\\+?")
+    private val cctvNumber = Regex("^cctv(\\d+)")
     fun merge(entries: List<PlaylistEntry>): List<Channel> {
         val groups = entries.groupBy { ChannelIdentity.key(it.name) }
         return groups.map { (key, variants) ->
             val first = variants.first()
             Channel(key, first.name, first.group, variants.map { it.stream }.distinctBy { it.url to it.headers },
                 variants.firstOrNull { it.logo.isNotBlank() }?.logo.orEmpty())
-        }.sortedWith(compareBy<Channel> { if (it.id.matches(Regex("cctv\\d+\\+?"))) 0 else 1 }
-            .thenBy { Regex("^cctv(\\d+)").find(it.id)?.groupValues?.get(1)?.toIntOrNull() ?: Int.MAX_VALUE }
+        }.sortedWith(compareBy<Channel> { if (it.id.matches(cctvKey)) 0 else 1 }
+            .thenBy { cctvNumber.find(it.id)?.groupValues?.get(1)?.toIntOrNull() ?: Int.MAX_VALUE }
             .thenBy { if (it.id.endsWith("+")) 1 else 0 })
     }
 }

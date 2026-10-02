@@ -8,10 +8,11 @@ import com.string.iptv.BuildConfig
 import com.string.iptv.catalog.*
 import java.io.File
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import java.util.concurrent.ExecutorCompletionService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 data class SourceStatus(
@@ -23,7 +24,9 @@ data class SourceStatus(
     val loading: Boolean = true,
 )
 
-data class CatalogSnapshot(val channels: List<Channel>, val sources: List<SourceStatus>, val refreshing: Boolean)
+data class CatalogSnapshot(val index: CatalogIndex, val sources: List<SourceStatus>, val refreshing: Boolean, val fromCache: Boolean) {
+    val channels get() = index.channels
+}
 
 /** Reads cache first; five independent downloads cannot overwrite each other's snapshots. */
 class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapshot) -> Unit) {
@@ -32,12 +35,16 @@ class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapsho
     private val coordinator = Executors.newSingleThreadExecutor()
     private val downloads = Executors.newFixedThreadPool(5)
     private val busy = AtomicBoolean(false)
+    private val client = OkHttpClient.Builder().connectTimeout(6, TimeUnit.SECONDS).readTimeout(8, TimeUnit.SECONDS)
+        .callTimeout(25, TimeUnit.SECONDS).build()
     private val sources = if (BuildConfig.DEBUG && BuildConfig.TEST_PLAYLIST_BASE_URL.isNotEmpty()) {
         BuiltInSources.all.map { it.copy(url = "${BuildConfig.TEST_PLAYLIST_BASE_URL}/${it.id}.playlist") }
     } else BuiltInSources.all
     @Volatile private var closed = false
     private val sourceEntries = linkedMapOf<String, List<PlaylistEntry>>()
     private val statuses = linkedMapOf<String, SourceStatus>()
+    private var index = CatalogIndex.EMPTY
+    private var fromCache = false
 
     fun refresh() {
         if (closed || !busy.compareAndSet(false, true)) return
@@ -51,6 +58,9 @@ class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapsho
                         statuses[source.id] = SourceStatus(source, parsed.size, parsed.isNotEmpty(), updatedAt = file.lastModified().takeIf { it > 0 })
                     } else statuses[source.id] = statuses.getValue(source.id).copy(loading = true, error = null)
                 }
+                // Cache is always published before submitting any network work.
+                rebuildIndex()
+                fromCache = index.channels.isNotEmpty()
                 publish(true)
                 val completions = ExecutorCompletionService<DownloadResult>(downloads)
                 sources.forEach { source -> completions.submit { download(source) } }
@@ -73,6 +83,12 @@ class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapsho
                         statuses[source.id] = statuses.getValue(source.id).copy(entryCount = cachedEntries.size,
                             cached = cachedEntries.isNotEmpty(), error = result.error ?: "未找到可播放的 HTTP 频道", loading = false)
                     }
+                    // With cache, merge only once at the end. Status-only updates reuse the
+                    // index, so refresh cannot repeatedly invalidate a 10,000-channel UI.
+                    if (index == sources.lastIndex || this.index.channels.isEmpty() && result.entries.isNotEmpty()) {
+                        rebuildIndex()
+                        fromCache = false
+                    }
                     publish(index != sources.lastIndex)
                 }
             } catch (_: InterruptedException) {
@@ -83,57 +99,58 @@ class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapsho
 
     private fun publish(refreshing: Boolean) {
         if (closed) return
-        val entries = sources.flatMap { sourceEntries[it.id].orEmpty() }
-        val snapshot = CatalogSnapshot(CatalogMerger.merge(entries), sources.map { statuses.getValue(it.id) }, refreshing)
+        val snapshot = CatalogSnapshot(index, sources.map { statuses.getValue(it.id) }, refreshing, fromCache)
         main.post { if (!closed) onUpdate(snapshot) }
     }
 
+    private fun rebuildIndex() {
+        val channels = CatalogMerger.merge(sources.flatMap { sourceEntries[it.id].orEmpty() })
+        if (channels != index.channels) index = CatalogIndex(channels)
+    }
+
     private fun download(source: PlaylistSource): DownloadResult {
-        val connection = URL(source.url).openConnection() as HttpURLConnection
         return try {
-            connection.connectTimeout = 6_000
-            connection.readTimeout = 8_000
-            connection.setRequestProperty("User-Agent", USER_AGENT)
-            connection.setRequestProperty("Accept", "*/*")
-            connection.instanceFollowRedirects = true
-            val status = connection.responseCode
-            if (status !in 200..299) throw IOException("HTTP $status")
-            val deadline = System.nanoTime() + 25_000_000_000L
-            val bytes = connection.inputStream.use { input ->
+            val request = Request.Builder().url(source.url).header("User-Agent", USER_AGENT).header("Accept", "*/*").build()
+            val bytes = client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
+                val body = response.body ?: throw IOException("空响应")
                 val output = java.io.ByteArrayOutputStream()
                 val buffer = ByteArray(16_384)
-                while (true) {
-                    if (Thread.currentThread().isInterrupted) throw InterruptedException()
-                    if (System.nanoTime() > deadline) throw IOException("下载超时")
-                    val count = input.read(buffer)
-                    if (count < 0) break
-                    if (output.size() + count > MAX_BYTES) throw IOException("频道列表超过 8 MB")
-                    output.write(buffer, 0, count)
+                body.byteStream().use { input ->
+                    while (true) {
+                        if (Thread.currentThread().isInterrupted) throw InterruptedException()
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        if (output.size() + count > MAX_BYTES) throw IOException("频道列表超过 8 MB")
+                        output.write(buffer, 0, count)
+                    }
                 }
                 output.toByteArray()
             }
             val text = bytes.toString(Charsets.UTF_8)
             DownloadResult(source, text, PlaylistParser.parse(text, source.id), null)
         } catch (error: Exception) {
+            if (BuildConfig.DEBUG) android.util.Log.w("PlaylistRepository", "${source.id}: download failed", error)
             DownloadResult(source, null, emptyList(), when (error) {
                 is java.net.SocketTimeoutException -> "连接或读取超时"
                 is java.net.UnknownHostException -> "无法解析服务器地址"
                 else -> error.message?.take(120) ?: "下载失败"
             })
-        } finally { connection.disconnect() }
+        }
     }
 
     fun close() {
         closed = true
         coordinator.shutdownNow()
         downloads.shutdownNow()
+        client.dispatcher.cancelAll()
         main.removeCallbacksAndMessages(null)
     }
 
     private data class DownloadResult(val source: PlaylistSource, val text: String?, val entries: List<PlaylistEntry>, val error: String?)
 
     companion object {
-        const val USER_AGENT = "Mozilla/5.0 (Linux; Android 10; Android TV) IPTVPlayer/0.1"
+        const val USER_AGENT = "Mozilla/5.0 (Linux; Android 10; Android TV) IPTVPlayer/${BuildConfig.VERSION_NAME}"
         private const val MAX_BYTES = 8 * 1024 * 1024
     }
 }
