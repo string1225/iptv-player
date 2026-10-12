@@ -3,29 +3,46 @@ package com.string.iptv.catalog
 import java.util.Locale
 import java.security.MessageDigest
 
-data class PlaylistSource(val id: String, val name: String, val url: String)
+data class PlaylistSource(val id: String, val name: String, val url: String, val mirrors: List<String> = emptyList())
 
 object BuiltInSources {
+    val collected = listOf(
+        PlaylistSource("dmyernestlu", "D · myernestlu", "https://myernestlu.github.io/zby.txt"),
+        PlaylistSource("dzbefine", "D · zbefine", "https://raw.githubusercontent.com/zbefine/iptv/main/iptv.m3u"),
+        PlaylistSource("dvamos", "D · 茶客", "https://raw.githubusercontent.com/vamoschuck/TV/main/M3U"),
+        PlaylistSource("dbigbig", "D · BigBigGrandG", "https://raw.githubusercontent.com/BigBigGrandG/IPTV-URL/release/Gather.m3u"),
+        PlaylistSource("dkimentanm", "D · Kimentanm", "https://raw.githubusercontent.com/Kimentanm/aptv/master/m3u/iptv.m3u"),
+        PlaylistSource("dyang", "D · YanG", "https://raw.githubusercontent.com/YanG-1989/m3u/main/Gather.m3u"),
+        PlaylistSource("dfanmingming", "D · 范明明 IPv6", "https://raw.githubusercontent.com/fanmingming/live/main/tv/m3u/ipv6.m3u",
+            listOf("https://live.fanmingming.cn/tv/m3u/ipv6.m3u")),
+    )
     val all = listOf(
         PlaylistSource("zbds4m3u", "直播电视 · IPv4 M3U", "https://live.zbds.top/tv/iptv4.m3u"),
         PlaylistSource("zbds4txt", "直播电视 · IPv4 TXT", "https://live.zbds.top/tv/iptv4.txt"),
         PlaylistSource("zbds6m3u", "直播电视 · IPv6 M3U", "https://live.zbds.top/tv/iptv6.m3u"),
         PlaylistSource("zbds6txt", "直播电视 · IPv6 TXT", "https://live.zbds.top/tv/iptv6.txt"),
-        PlaylistSource("iptvorg", "IPTV.org · 全球频道", "https://iptv-org.github.io/iptv/index.m3u"),
-    )
+    ) + collected + PlaylistSource("iptvorg", "IPTV.org · 全球频道", "https://iptv-org.github.io/iptv/index.m3u")
 }
 
 data class Stream(val url: String, val sourceId: String, val headers: Map<String, String> = emptyMap()) {
     // Source lists can change order or contain the same route; health belongs to URL + headers.
-    val healthKey: String by lazy {
+    @Volatile private var cachedHealthKey: String? = null
+    val healthKey: String get() = cachedHealthKey ?: run {
         val identity = buildString {
             append(url.length).append(':').append(url)
             headers.toSortedMap().forEach { (name, value) ->
                 append(name.length).append(':').append(name).append(value.length).append(':').append(value)
             }
         }
-        MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8))
-            .joinToString("") { "%02x".format(it) }
+        val digest = MessageDigest.getInstance("SHA-256").digest(identity.toByteArray(Charsets.UTF_8))
+        val hex = "0123456789abcdef"
+        val characters = CharArray(digest.size * 2)
+        digest.forEachIndexed { index, byte ->
+            val value = byte.toInt() and 0xff
+            characters[index * 2] = hex[value ushr 4]
+            characters[index * 2 + 1] = hex[value and 15]
+        }
+        String(characters).also { cachedHealthKey = it }
     }
 }
 
@@ -47,22 +64,25 @@ data class Channel(
 )
 
 object SourceGroups {
+    private val collectedIds by lazy { BuiltInSources.collected.map { it.id }.toSet() }
     fun label(entry: PlaylistEntry): String = when {
-        entry.stream.sourceId.startsWith("zbds") -> "Z · ${entry.group}"
-        entry.stream.sourceId == "iptvorg" -> "I · ${entry.group}"
-        else -> entry.group
+        entry.stream.sourceId.startsWith("zbds") -> "Z · ${RegionalGroups.category(entry)}"
+        entry.stream.sourceId in collectedIds -> "D · ${RegionalGroups.category(entry)}"
+        entry.stream.sourceId == "iptvorg" -> "I · ${RegionalGroups.category(entry)}"
+        else -> RegionalGroups.category(entry)
     }
 
     fun rank(group: String): Int = when {
         group.startsWith("Z · ") -> 0
-        group.startsWith("I · ") -> 1
-        else -> 2
+        group.startsWith("D · ") -> 1
+        group.startsWith("I · ") -> 2
+        else -> 3
     }
 }
 
 object ChannelIdentity {
     private val quality = Regex("\\s*[（(](?:\\d{3,4}p|[248]K|HD|SD|高清|标清)[）)]", RegexOption.IGNORE_CASE)
-    private val cctv = Regex("^cctv[- _]*(\\d{1,2})(\\+?)(?:[- _]*(?:hd|sd|高清|标清|超清))?$", RegexOption.IGNORE_CASE)
+    private val cctv = Regex("^cctv[- _]*(\\d{1,2})(\\+?)(?:[- _]*(?:综合|财经|综艺|中文国际|体育赛事|体育|电影|国防军事|电视剧|纪录|科教|戏曲|新闻|少儿|音乐|农业农村|农业))?(?:[- _]*(?:hd|sd|高清|标清|超清))?$", RegexOption.IGNORE_CASE)
     private val whitespace = Regex("\\s+")
 
     fun key(name: String): String {
@@ -76,14 +96,16 @@ object ChannelIdentity {
 object CatalogMerger {
     private val cctvKey = Regex("cctv\\d+\\+?")
     private val cctvNumber = Regex("^cctv(\\d+)")
-    fun merge(entries: List<PlaylistEntry>): List<Channel> {
+    fun merge(entries: List<PlaylistEntry>, previous: Map<String, Channel> = emptyMap()): List<Channel> {
         val groups = entries.groupBy { ChannelIdentity.key(it.name) }
         return groups.map { (key, variants) ->
             val ordered = variants.sortedBy { SourceGroups.rank(SourceGroups.label(it)) }
             val first = ordered.first()
             val memberships = ordered.map(SourceGroups::label).distinct()
-            Channel(key, first.name, memberships.first(), ordered.map { it.stream }.distinctBy { it.url to it.headers },
-                ordered.firstOrNull { it.logo.isNotBlank() }?.logo.orEmpty(), memberships)
+            val streams = ordered.map { it.stream }.distinctBy { it.url to it.headers }
+            val logo = ordered.firstOrNull { it.logo.isNotBlank() }?.logo.orEmpty()
+            previous[key]?.takeIf { it.name == first.name && it.groups == memberships && it.streams == streams && it.logo == logo }
+                ?: Channel(key, first.name, memberships.first(), streams, logo, memberships)
         }.sortedWith(compareBy<Channel> { if (it.id.matches(cctvKey)) 0 else 1 }
             .thenBy { cctvNumber.find(it.id)?.groupValues?.get(1)?.toIntOrNull() ?: Int.MAX_VALUE }
             .thenBy { if (it.id.endsWith("+")) 1 else 0 })

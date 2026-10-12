@@ -8,6 +8,10 @@ class RouteHealthTest {
     private val second = Stream("https://example.com/two", "iptvorg")
     private fun channel(id: String, streams: List<Stream> = listOf(first, second)) = Channel(id, id, "group", streams)
 
+    @Test fun keysRemainCompatibleWithThePersistedV02Format() {
+        assertEquals("ea52be6a32250b81a6417052eaa6a3d130816bef266bdc433315dd6cc3bbeb3b", first.healthKey)
+    }
+
     @Test fun observationsSurviveReloadAndHeadersIdentifyDifferentRoutes() {
         val disk = mutableMapOf<String, RouteState>()
         val health = RouteHealth(persist = { key, value -> disk[key] = value })

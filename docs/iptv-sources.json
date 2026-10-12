@@ -1,0 +1,607 @@
+{
+  "collectedOn": "2026-10-12",
+  "reference": "https://github.com/dongyubin/IPTV",
+  "sources": [
+    {
+      "id": "dmyernestlu",
+      "name": "myernestlu",
+      "url": "https://myernestlu.github.io/zby.txt",
+      "defaultEnabled": true,
+      "check": {
+        "status": 200,
+        "entries": 632,
+        "ipv4Literals": 176,
+        "ipv6Literals": 0,
+        "domainHosts": 456,
+        "bytes": 58392,
+        "sha256": "3a9149f37140fa9460a8d26b193875f0179700a822b06b0cb2804e8e678da5cc",
+        "attempts": []
+      }
+    },
+    {
+      "id": "dzbefine",
+      "name": "zbefine",
+      "url": "https://raw.githubusercontent.com/zbefine/iptv/main/iptv.m3u",
+      "defaultEnabled": true,
+      "check": {
+        "status": 200,
+        "entries": 1286,
+        "ipv4Literals": 282,
+        "ipv6Literals": 0,
+        "domainHosts": 1004,
+        "bytes": 136965,
+        "sha256": "15328f59399cc7e7b49f911612bb38a78645bfcd2cb2bcc579cf694b71521fa4",
+        "attempts": []
+      }
+    },
+    {
+      "id": "dvamos",
+      "name": "茶客 vamoschuck",
+      "url": "https://raw.githubusercontent.com/vamoschuck/TV/main/M3U",
+      "defaultEnabled": true,
+      "check": {
+        "status": 200,
+        "entries": 788,
+        "ipv4Literals": 233,
+        "ipv6Literals": 0,
+        "domainHosts": 555,
+        "bytes": 147124,
+        "sha256": "58ed6169f6c08e26e64925dbf52ce7455fcd007ca419ff8269349cfc2f3f923a",
+        "attempts": []
+      }
+    },
+    {
+      "id": "dbigbig",
+      "name": "BigBigGrandG",
+      "url": "https://raw.githubusercontent.com/BigBigGrandG/IPTV-URL/release/Gather.m3u",
+      "defaultEnabled": true,
+      "check": {
+        "status": 200,
+        "entries": 1955,
+        "ipv4Literals": 153,
+        "ipv6Literals": 248,
+        "domainHosts": 1554,
+        "bytes": 329793,
+        "sha256": "dcda527b1945f23a7a469f768e98fb2dedcc0d51529c070a809f4fa7d583532d",
+        "attempts": []
+      }
+    },
+    {
+      "id": "dkimentanm",
+      "name": "Kimentanm",
+      "url": "https://raw.githubusercontent.com/Kimentanm/aptv/master/m3u/iptv.m3u",
+      "defaultEnabled": true,
+      "check": {
+        "status": 200,
+        "entries": 119,
+        "ipv4Literals": 67,
+        "ipv6Literals": 0,
+        "domainHosts": 52,
+        "bytes": 21944,
+        "sha256": "6bca02295ddf751419889a72f87dfd0fe6f981e3b447a6bcb7e6f476446e93da",
+        "attempts": []
+      }
+    },
+    {
+      "id": "dyang",
+      "name": "YanG",
+      "url": "https://raw.githubusercontent.com/YanG-1989/m3u/main/Gather.m3u",
+      "defaultEnabled": true,
+      "check": {
+        "status": 200,
+        "entries": 123,
+        "ipv4Literals": 0,
+        "ipv6Literals": 0,
+        "domainHosts": 123,
+        "bytes": 26227,
+        "sha256": "f945658ede25eef57fd74d6377fb5d29ffae9959f7781420e595c9d2651490f5",
+        "attempts": []
+      }
+    },
+    {
+      "id": "dfanmingming",
+      "name": "范明明 IPv6",
+      "url": "https://raw.githubusercontent.com/fanmingming/live/main/tv/m3u/ipv6.m3u",
+      "defaultEnabled": true,
+      "check": {
+        "status": 200,
+        "entries": 82,
+        "ipv4Literals": 0,
+        "ipv6Literals": 55,
+        "domainHosts": 27,
+        "bytes": 25215,
+        "sha256": "935849a6e2f083884a450510c6c000ee4535fc139f0fca168f51dcfcbfce44f8",
+        "attempts": []
+      }
+    },
+    {
+      "id": "dfanmirror",
+      "name": "范明明 国内镜像",
+      "url": "https://live.fanmingming.cn/tv/m3u/ipv6.m3u",
+      "mirrorOf": "dfanmingming",
+      "defaultEnabled": false,
+      "check": {
+        "status": 200,
+        "entries": 82,
+        "ipv4Literals": 0,
+        "ipv6Literals": 55,
+        "domainHosts": 27,
+        "bytes": 25215,
+        "sha256": "935849a6e2f083884a450510c6c000ee4535fc139f0fca168f51dcfcbfce44f8",
+        "attempts": []
+      }
+    },
+    {
+      "id": "dyuechan",
+      "name": "YueChan IPv6",
+      "url": "https://raw.githubusercontent.com/YueChan/Live/main/IPTV.m3u",
+      "defaultEnabled": false,
+      "check": {
+        "status": "failed",
+        "entries": null,
+        "ipv4Literals": null,
+        "ipv6Literals": null,
+        "domainHosts": null,
+        "bytes": null,
+        "sha256": null,
+        "attempts": [
+          {
+            "url": "https://gh-proxy.org/https://raw.githubusercontent.com/YueChan/Live/main/IPTV.m3u",
+            "error": "response is not an HTTP(S) playlist"
+          },
+          {
+            "url": "https://raw.githubusercontent.com/YueChan/Live/main/IPTV.m3u",
+            "error": "response is not an HTTP(S) playlist"
+          }
+        ]
+      }
+    },
+    {
+      "id": "dyuecdn",
+      "name": "YueChan CDN",
+      "url": "https://testingcf.jsdelivr.net/gh/YueChan/Live@main/IPTV.m3u",
+      "mirrorOf": "dyuechan",
+      "defaultEnabled": false,
+      "check": {
+        "status": "failed",
+        "entries": null,
+        "ipv4Literals": null,
+        "ipv6Literals": null,
+        "domainHosts": null,
+        "bytes": null,
+        "sha256": null,
+        "attempts": [
+          {
+            "url": "https://testingcf.jsdelivr.net/gh/YueChan/Live@main/IPTV.m3u",
+            "error": "response is not an HTTP(S) playlist"
+          }
+        ]
+      }
+    },
+    {
+      "id": "dxxy",
+      "name": "xxy002",
+      "url": "https://gitee.com/xxy002/zhiboyuan/raw/master/dsy",
+      "defaultEnabled": false,
+      "check": {
+        "status": "failed",
+        "entries": null,
+        "ipv4Literals": null,
+        "ipv6Literals": null,
+        "domainHosts": null,
+        "bytes": null,
+        "sha256": null,
+        "attempts": [
+          {
+            "url": "https://gitee.com/xxy002/zhiboyuan/raw/master/dsy",
+            "error": "HTTP Error 404: Not Found"
+          }
+        ]
+      }
+    },
+    {
+      "id": "depgcn",
+      "name": "EPG.pw 大陆",
+      "url": "https://epg.pw/test_channels.m3u",
+      "defaultEnabled": false,
+      "check": {
+        "status": 200,
+        "entries": 2272,
+        "ipv4Literals": 0,
+        "ipv6Literals": 0,
+        "domainHosts": 2272,
+        "bytes": 723823,
+        "sha256": "d8a44a21538b6abaf94a54f5f3e1dad78bafb885442b92089d4e7702e7418cbc",
+        "attempts": []
+      }
+    },
+    {
+      "id": "depghk",
+      "name": "EPG.pw 香港",
+      "url": "https://epg.pw/test_channels_hong_kong.m3u",
+      "defaultEnabled": false,
+      "check": {
+        "status": 200,
+        "entries": 48,
+        "ipv4Literals": 0,
+        "ipv6Literals": 0,
+        "domainHosts": 48,
+        "bytes": 15533,
+        "sha256": "706c972422a95038155c46f81cc0d8f97ae28f6eed46005eb3f35eb09e00075f",
+        "attempts": []
+      }
+    },
+    {
+      "id": "depgmo",
+      "name": "EPG.pw 澳门",
+      "url": "https://epg.pw/test_channels_macau.m3u",
+      "defaultEnabled": false,
+      "check": {
+        "status": 200,
+        "entries": 19,
+        "ipv4Literals": 0,
+        "ipv6Literals": 0,
+        "domainHosts": 19,
+        "bytes": 6134,
+        "sha256": "e0c65fc53400cfe773658ac06e055aaa7e5323f6a4396c6905d82069db1b63a0",
+        "attempts": []
+      }
+    },
+    {
+      "id": "depgtw",
+      "name": "EPG.pw 台湾",
+      "url": "https://epg.pw/test_channels_taiwan.m3u",
+      "defaultEnabled": false,
+      "check": {
+        "status": 200,
+        "entries": 65,
+        "ipv4Literals": 0,
+        "ipv6Literals": 0,
+        "domainHosts": 65,
+        "bytes": 21991,
+        "sha256": "268b1c434e09508c7df96b592365c7998e003c92f97aed1dde37a9aa2c02a52b",
+        "attempts": []
+      }
+    },
+    {
+      "id": "depgsg",
+      "name": "EPG.pw 新加坡",
+      "url": "https://epg.pw/test_channels_singapore.m3u",
+      "defaultEnabled": false,
+      "check": {
+        "status": 200,
+        "entries": 9,
+        "ipv4Literals": 0,
+        "ipv6Literals": 0,
+        "domainHosts": 9,
+        "bytes": 2719,
+        "sha256": "d993c97dfc018cc7b527f741f2c9b1ac3cf713ce900686d5d19d34ac2a1af302",
+        "attempts": []
+      }
+    },
+    {
+      "id": "depgmy",
+      "name": "EPG.pw 马来西亚",
+      "url": "https://epg.pw/test_channels_malaysia.m3u",
+      "defaultEnabled": false,
+      "check": {
+        "status": 200,
+        "entries": 20,
+        "ipv4Literals": 0,
+        "ipv6Literals": 0,
+        "domainHosts": 20,
+        "bytes": 6404,
+        "sha256": "1bf6307cc0daad63c57e1bf61835303a02e6d241e4e1c678161b5bc0ad5e7329",
+        "attempts": []
+      }
+    },
+    {
+      "id": "dorgtw",
+      "name": "iptv-org 台湾",
+      "url": "https://iptv-org.github.io/iptv/countries/tw.m3u",
+      "alreadyCoveredBy": "iptvorg",
+      "defaultEnabled": false,
+      "check": {
+        "status": 200,
+        "entries": 25,
+        "ipv4Literals": 4,
+        "ipv6Literals": 0,
+        "domainHosts": 21,
+        "bytes": 4747,
+        "sha256": "177eedcdf4eae2a23e9092007ae9ea034d706e81ccd305ed89d6310472dd2995",
+        "attempts": []
+      }
+    },
+    {
+      "id": "dsport",
+      "name": "海外赛事列表",
+      "url": "https://kan.waiguotai.top/other.m3u",
+      "defaultEnabled": false,
+      "check": {
+        "status": 200,
+        "entries": 2,
+        "ipv4Literals": 0,
+        "ipv6Literals": 0,
+        "domainHosts": 2,
+        "bytes": 464,
+        "sha256": "57e0565d677a4374ac343f4d9d268eaabbdc79514f04ed86a0c6b6b2dab9e6f6",
+        "attempts": []
+      }
+    },
+    {
+      "id": "oldbestv",
+      "name": "Ftindy 百视通",
+      "url": "https://raw.githubusercontent.com/Ftindy/IPTV-URL/main/bestv.m3u",
+      "upstreamDeprecated": true,
+      "defaultEnabled": false,
+      "check": {
+        "status": "failed",
+        "entries": null,
+        "ipv4Literals": null,
+        "ipv6Literals": null,
+        "domainHosts": null,
+        "bytes": null,
+        "sha256": null,
+        "attempts": [
+          {
+            "url": "https://gh-proxy.org/https://raw.githubusercontent.com/Ftindy/IPTV-URL/main/bestv.m3u",
+            "error": "HTTP Error 404: Not Found"
+          },
+          {
+            "url": "https://raw.githubusercontent.com/Ftindy/IPTV-URL/main/bestv.m3u",
+            "error": "HTTP Error 404: Not Found"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oldcqyx",
+      "name": "Ftindy 重庆",
+      "url": "https://raw.githubusercontent.com/Ftindy/IPTV-URL/main/cqyx.m3u",
+      "upstreamDeprecated": true,
+      "defaultEnabled": false,
+      "check": {
+        "status": "failed",
+        "entries": null,
+        "ipv4Literals": null,
+        "ipv6Literals": null,
+        "domainHosts": null,
+        "bytes": null,
+        "sha256": null,
+        "attempts": [
+          {
+            "url": "https://gh-proxy.org/https://raw.githubusercontent.com/Ftindy/IPTV-URL/main/cqyx.m3u",
+            "error": "HTTP Error 404: Not Found"
+          },
+          {
+            "url": "https://raw.githubusercontent.com/Ftindy/IPTV-URL/main/cqyx.m3u",
+            "error": "HTTP Error 404: Not Found"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oldyqgd",
+      "name": "Ftindy 阳泉",
+      "url": "https://raw.githubusercontent.com/Ftindy/IPTV-URL/main/yqgd.m3u",
+      "upstreamDeprecated": true,
+      "defaultEnabled": false,
+      "check": {
+        "status": "failed",
+        "entries": null,
+        "ipv4Literals": null,
+        "ipv6Literals": null,
+        "domainHosts": null,
+        "bytes": null,
+        "sha256": null,
+        "attempts": [
+          {
+            "url": "https://gh-proxy.org/https://raw.githubusercontent.com/Ftindy/IPTV-URL/main/yqgd.m3u",
+            "error": "HTTP Error 404: Not Found"
+          },
+          {
+            "url": "https://raw.githubusercontent.com/Ftindy/IPTV-URL/main/yqgd.m3u",
+            "error": "HTTP Error 404: Not Found"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oldhbgd",
+      "name": "Ftindy 河北",
+      "url": "https://raw.githubusercontent.com/Ftindy/IPTV-URL/main/hbgd.m3u",
+      "upstreamDeprecated": true,
+      "defaultEnabled": false,
+      "check": {
+        "status": "failed",
+        "entries": null,
+        "ipv4Literals": null,
+        "ipv6Literals": null,
+        "domainHosts": null,
+        "bytes": null,
+        "sha256": null,
+        "attempts": [
+          {
+            "url": "https://gh-proxy.org/https://raw.githubusercontent.com/Ftindy/IPTV-URL/main/hbgd.m3u",
+            "error": "HTTP Error 404: Not Found"
+          },
+          {
+            "url": "https://raw.githubusercontent.com/Ftindy/IPTV-URL/main/hbgd.m3u",
+            "error": "HTTP Error 404: Not Found"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oldftindy",
+      "name": "Ftindy 4K/8K",
+      "url": "https://raw.githubusercontent.com/Ftindy/IPTV-URL/main/IPTV.m3u",
+      "upstreamDeprecated": true,
+      "defaultEnabled": false,
+      "check": {
+        "status": "failed",
+        "entries": null,
+        "ipv4Literals": null,
+        "ipv6Literals": null,
+        "domainHosts": null,
+        "bytes": null,
+        "sha256": null,
+        "attempts": [
+          {
+            "url": "https://gh-proxy.org/https://raw.githubusercontent.com/Ftindy/IPTV-URL/main/IPTV.m3u",
+            "error": "HTTP Error 404: Not Found"
+          },
+          {
+            "url": "https://raw.githubusercontent.com/Ftindy/IPTV-URL/main/IPTV.m3u",
+            "error": "HTTP Error 404: Not Found"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oldfanv6",
+      "name": "范明明旧地址",
+      "url": "https://raw.githubusercontent.com/fanmingming/live/main/tv/m3u/v6.m3u",
+      "upstreamDeprecated": true,
+      "defaultEnabled": false,
+      "check": {
+        "status": "failed",
+        "entries": null,
+        "ipv4Literals": null,
+        "ipv6Literals": null,
+        "domainHosts": null,
+        "bytes": null,
+        "sha256": null,
+        "attempts": [
+          {
+            "url": "https://gh-proxy.org/https://raw.githubusercontent.com/fanmingming/live/main/tv/m3u/v6.m3u",
+            "error": "HTTP Error 404: Not Found"
+          },
+          {
+            "url": "https://raw.githubusercontent.com/fanmingming/live/main/tv/m3u/v6.m3u",
+            "error": "HTTP Error 404: Not Found"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oldwhpsky",
+      "name": "whpsky",
+      "url": "https://raw.githubusercontent.com/whpsky/iptv/main/chinatv.m3u",
+      "upstreamDeprecated": true,
+      "defaultEnabled": false,
+      "check": {
+        "status": "failed",
+        "entries": null,
+        "ipv4Literals": null,
+        "ipv6Literals": null,
+        "domainHosts": null,
+        "bytes": null,
+        "sha256": null,
+        "attempts": [
+          {
+            "url": "https://gh-proxy.org/https://raw.githubusercontent.com/whpsky/iptv/main/chinatv.m3u",
+            "error": "HTTP Error 404: Not Found"
+          },
+          {
+            "url": "https://raw.githubusercontent.com/whpsky/iptv/main/chinatv.m3u",
+            "error": "HTTP Error 404: Not Found"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oldwhpcdn",
+      "name": "whpsky CDN",
+      "url": "https://testingcf.jsdelivr.net/gh/whpsky/iptv@main/chinatv.m3u",
+      "upstreamDeprecated": true,
+      "defaultEnabled": false,
+      "check": {
+        "status": "failed",
+        "entries": null,
+        "ipv4Literals": null,
+        "ipv6Literals": null,
+        "domainHosts": null,
+        "bytes": null,
+        "sha256": null,
+        "attempts": [
+          {
+            "url": "https://testingcf.jsdelivr.net/gh/whpsky/iptv@main/chinatv.m3u",
+            "error": "HTTP Error 404: Not Found"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oldzhang",
+      "name": "ZhangHongGuang",
+      "url": "https://raw.githubusercontent.com/zhanghongguang/zhanghongguang.github.io/main/IPV6_IPTV.m3u",
+      "upstreamDeprecated": true,
+      "defaultEnabled": false,
+      "check": {
+        "status": "failed",
+        "entries": null,
+        "ipv4Literals": null,
+        "ipv6Literals": null,
+        "domainHosts": null,
+        "bytes": null,
+        "sha256": null,
+        "attempts": [
+          {
+            "url": "https://gh-proxy.org/https://raw.githubusercontent.com/zhanghongguang/zhanghongguang.github.io/main/IPV6_IPTV.m3u",
+            "error": "HTTP Error 404: Not Found"
+          },
+          {
+            "url": "https://raw.githubusercontent.com/zhanghongguang/zhanghongguang.github.io/main/IPV6_IPTV.m3u",
+            "error": "HTTP Error 404: Not Found"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oldxxy",
+      "name": "YIPTV 旧地址",
+      "url": "https://xxy.free.hr/YIPTV.m3u",
+      "upstreamDeprecated": true,
+      "defaultEnabled": false,
+      "check": {
+        "status": "failed",
+        "entries": null,
+        "ipv4Literals": null,
+        "ipv6Literals": null,
+        "domainHosts": null,
+        "bytes": null,
+        "sha256": null,
+        "attempts": [
+          {
+            "url": "https://xxy.free.hr/YIPTV.m3u",
+            "error": "<urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1081)>"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oldcn",
+      "name": "228088 旧地址",
+      "url": "https://iptv.228088.xyz/cn.m3u",
+      "upstreamDeprecated": true,
+      "defaultEnabled": false,
+      "check": {
+        "status": "failed",
+        "entries": null,
+        "ipv4Literals": null,
+        "ipv6Literals": null,
+        "domainHosts": null,
+        "bytes": null,
+        "sha256": null,
+        "attempts": [
+          {
+            "url": "https://iptv.228088.xyz/cn.m3u",
+            "error": "<urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1081)>"
+          }
+        ]
+      }
+    }
+  ],
+  "referenceCommit": "d12ec1b907d1c63067a66c8d7a5b445d8fa80dd5"
+}

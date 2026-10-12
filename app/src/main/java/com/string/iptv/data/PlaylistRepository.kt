@@ -8,6 +8,7 @@ import com.string.iptv.BuildConfig
 import com.string.iptv.catalog.*
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.ExecutorCompletionService
@@ -28,7 +29,7 @@ data class CatalogSnapshot(val index: CatalogIndex, val sources: List<SourceStat
     val channels get() = index.channels
 }
 
-/** Reads cache first; five independent downloads cannot overwrite each other's snapshots. */
+/** Reads cache first; independent source downloads cannot overwrite each other's snapshots. */
 class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapshot) -> Unit) {
     private val directory = File(context.filesDir, "playlists").apply { mkdirs() }
     private val main = Handler(Looper.getMainLooper())
@@ -38,11 +39,16 @@ class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapsho
     private val client = OkHttpClient.Builder().connectTimeout(6, TimeUnit.SECONDS).readTimeout(8, TimeUnit.SECONDS)
         .callTimeout(25, TimeUnit.SECONDS).build()
     private val sources = if (BuildConfig.DEBUG && BuildConfig.TEST_PLAYLIST_BASE_URL.isNotEmpty()) {
-        BuiltInSources.all.map { it.copy(url = "${BuildConfig.TEST_PLAYLIST_BASE_URL}/${it.id}.playlist") }
+        BuiltInSources.all.map {
+            val direct = "${BuildConfig.TEST_PLAYLIST_BASE_URL}/${it.id}.playlist"
+            if (it in BuiltInSources.collected) it.copy(url = "${BuildConfig.TEST_PLAYLIST_BASE_URL}/${it.id}.proxy", mirrors = listOf(direct))
+            else it.copy(url = direct, mirrors = emptyList())
+        }
     } else BuiltInSources.all
     @Volatile private var closed = false
     private val sourceEntries = linkedMapOf<String, List<PlaylistEntry>>()
     private val statuses = linkedMapOf<String, SourceStatus>()
+    private val digests = mutableMapOf<String, String>()
     private var index = CatalogIndex.EMPTY
     private var fromCache = false
 
@@ -55,6 +61,18 @@ class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapsho
                         val file = File(directory, "${source.id}.playlist")
                         val parsed = runCatching { PlaylistParser.parse(AtomicFile(file).openRead().bufferedReader(Charsets.UTF_8).use { it.readText() }, source.id) }.getOrDefault(emptyList())
                         sourceEntries[source.id] = parsed
+                        if (parsed.isNotEmpty()) runCatching {
+                            val digest = MessageDigest.getInstance("SHA-256")
+                            AtomicFile(file).openRead().use { input ->
+                                val buffer = ByteArray(8_192)
+                                while (true) {
+                                    val count = input.read(buffer)
+                                    if (count < 0) break
+                                    digest.update(buffer, 0, count)
+                                }
+                            }
+                            digests[source.id] = PlaylistDownloads.hex(digest.digest())
+                        }
                         statuses[source.id] = SourceStatus(source, parsed.size, parsed.isNotEmpty(), updatedAt = file.lastModified().takeIf { it > 0 })
                     } else statuses[source.id] = statuses.getValue(source.id).copy(loading = true, error = null)
                 }
@@ -63,13 +81,22 @@ class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapsho
                 fromCache = index.channels.isNotEmpty()
                 publish(true)
                 val completions = ExecutorCompletionService<DownloadResult>(downloads)
-                sources.forEach { source -> completions.submit { download(source) } }
+                var catalogDirty = false
+                sources.forEach { source ->
+                    val cachedDigest = digests[source.id]
+                    completions.submit { download(source, cachedDigest) }
+                }
                 repeat(sources.size) { index ->
                     if (closed) return@execute
                     val result = completions.take().get()
                     val source = result.source
-                    if (result.text != null && result.entries.isNotEmpty()) {
-                        sourceEntries[source.id] = result.entries
+                    if (result.unchanged) {
+                        statuses[source.id] = SourceStatus(source, sourceEntries[source.id].orEmpty().size, updatedAt = System.currentTimeMillis(), loading = false)
+                    } else if (result.text != null && result.entries.isNotEmpty()) {
+                        if (sourceEntries[source.id] != result.entries) {
+                            sourceEntries[source.id] = result.entries
+                            catalogDirty = true
+                        }
                         val file = AtomicFile(File(directory, "${source.id}.playlist"))
                         val saved = runCatching {
                             val stream = file.startWrite()
@@ -78,6 +105,7 @@ class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapsho
                         }.isSuccess
                         statuses[source.id] = SourceStatus(source, result.entries.size, updatedAt = System.currentTimeMillis(),
                             error = if (saved) null else "频道可用，但缓存写入失败", loading = false)
+                        if (saved) result.digest?.let { digests[source.id] = it } else digests.remove(source.id)
                     } else {
                         val cachedEntries = sourceEntries[source.id].orEmpty()
                         statuses[source.id] = statuses.getValue(source.id).copy(entryCount = cachedEntries.size,
@@ -85,8 +113,9 @@ class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapsho
                     }
                     // With cache, merge only once at the end. Status-only updates reuse the
                     // index, so refresh cannot repeatedly invalidate a 10,000-channel UI.
-                    if (index == sources.lastIndex || this.index.channels.isEmpty() && result.entries.isNotEmpty()) {
+                    if (catalogDirty && (index == sources.lastIndex || this.index.channels.isEmpty() && result.entries.isNotEmpty())) {
                         rebuildIndex()
+                        catalogDirty = false
                         fromCache = false
                     }
                     publish(index != sources.lastIndex)
@@ -104,14 +133,20 @@ class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapsho
     }
 
     private fun rebuildIndex() {
-        val channels = CatalogMerger.merge(sources.flatMap { sourceEntries[it.id].orEmpty() })
+        val channels = CatalogMerger.merge(sources.flatMap { sourceEntries[it.id].orEmpty() }, index.byId)
         if (channels != index.channels) index = CatalogIndex(channels)
     }
 
-    private fun download(source: PlaylistSource): DownloadResult {
-        return try {
-            val request = Request.Builder().url(source.url).header("User-Agent", USER_AGENT).header("Accept", "*/*").build()
-            val bytes = client.newCall(request).execute().use { response ->
+    private fun download(source: PlaylistSource, cachedDigest: String?): DownloadResult {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(25)
+        var lastError: Exception? = null
+        for (url in PlaylistDownloads.candidates(source)) try {
+            if (closed || Thread.currentThread().isInterrupted) break
+            val remaining = deadline - System.nanoTime()
+            if (remaining <= 0) break
+            val request = Request.Builder().url(url).header("User-Agent", USER_AGENT).header("Accept", "*/*").build()
+            val call = client.newCall(request).also { it.timeout().timeout(remaining, TimeUnit.NANOSECONDS) }
+            val bytes = call.execute().use { response ->
                 if (!response.isSuccessful) throw IOException("HTTP ${response.code}")
                 val body = response.body ?: throw IOException("空响应")
                 val output = java.io.ByteArrayOutputStream()
@@ -127,16 +162,23 @@ class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapsho
                 }
                 output.toByteArray()
             }
+            val digest = PlaylistDownloads.digest(bytes)
+            if (digest == cachedDigest) return DownloadResult(source, null, emptyList(), null, digest, unchanged = true)
             val text = bytes.toString(Charsets.UTF_8)
-            DownloadResult(source, text, PlaylistParser.parse(text, source.id), null)
+            if (text.trimStart().startsWith("<!doctype", true) || text.trimStart().startsWith("<html", true)) throw IOException("返回了网页，非频道列表")
+            val entries = PlaylistParser.parse(text, source.id)
+            if (entries.isEmpty()) throw IOException("未找到可播放的 HTTP 频道")
+            return DownloadResult(source, text, entries, null, digest)
         } catch (error: Exception) {
+            if (error is InterruptedException) { Thread.currentThread().interrupt(); break }
+            lastError = error
             if (BuildConfig.DEBUG) android.util.Log.w("PlaylistRepository", "${source.id}: download failed", error)
-            DownloadResult(source, null, emptyList(), when (error) {
+        }
+        return DownloadResult(source, null, emptyList(), when (val error = lastError) {
                 is java.net.SocketTimeoutException -> "连接或读取超时"
                 is java.net.UnknownHostException -> "无法解析服务器地址"
-                else -> error.message?.take(120) ?: "下载失败"
+                else -> error?.message?.take(120) ?: "下载超时或已取消"
             })
-        }
     }
 
     fun close() {
@@ -147,7 +189,8 @@ class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapsho
         main.removeCallbacksAndMessages(null)
     }
 
-    private data class DownloadResult(val source: PlaylistSource, val text: String?, val entries: List<PlaylistEntry>, val error: String?)
+    private data class DownloadResult(val source: PlaylistSource, val text: String?, val entries: List<PlaylistEntry>, val error: String?,
+                                      val digest: String? = null, val unchanged: Boolean = false)
 
     companion object {
         const val USER_AGENT = "Mozilla/5.0 (Linux; Android 10; Android TV) IPTVPlayer/${BuildConfig.VERSION_NAME}"

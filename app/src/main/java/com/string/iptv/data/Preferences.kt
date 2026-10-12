@@ -2,6 +2,7 @@ package com.string.iptv.data
 
 import android.content.Context
 import com.string.iptv.catalog.Channel
+import com.string.iptv.catalog.ChannelIdentity
 import com.string.iptv.catalog.RouteHealth
 import com.string.iptv.catalog.RouteState
 
@@ -11,6 +12,29 @@ class Preferences(context: Context) {
     val routeHealth = RouteHealth(healthStore.all.mapNotNull { (key, value) ->
         runCatching { key to RouteState.valueOf(value as String) }.getOrNull()
     }.toMap().toMutableMap()) { key, state -> healthStore.edit().putString(key, state.name).apply() }
+    init {
+        // New feeds use CCTV-1 综合 aliases. Keep older defaults/favorites/disabled flags.
+        val edit = store.edit()
+        store.getString("default_channel", null)?.let { id ->
+            val canonical = ChannelIdentity.key(id)
+            if (canonical != id) edit.putString("default_channel", canonical)
+        }
+        listOf("favorites", "disabled_channels").forEach { key ->
+            val old = store.getStringSet(key, emptySet()).orEmpty()
+            val canonical = old.map(ChannelIdentity::key).toSet()
+            if (canonical != old) edit.putStringSet(key, canonical)
+        }
+        store.all.forEach { (key, value) ->
+            if (key.startsWith("route_") && value is String) {
+                val canonical = "route_${ChannelIdentity.key(key.removePrefix("route_"))}"
+                if (canonical != key) {
+                    if (!store.contains(canonical)) edit.putString(canonical, value)
+                    edit.remove(key)
+                }
+            }
+        }
+        edit.apply()
+    }
     val defaultId: String? get() = store.getString("default_channel", null)
     val defaultName: String? get() = store.getString("default_name", null)
     val favorites: Set<String> get() = store.getStringSet("favorites", emptySet()).orEmpty().toSet()

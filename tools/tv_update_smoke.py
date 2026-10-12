@@ -23,7 +23,7 @@ def main():
     parser.add_argument("--apk", type=pathlib.Path, required=True)
     parser.add_argument("--update-apk", type=pathlib.Path, required=True)
     parser.add_argument("--wrong-signer-apk", type=pathlib.Path, required=True)
-    parser.add_argument("--update-version", default="0.2.2")
+    parser.add_argument("--update-version", default="0.3.1")
     parser.add_argument("--output", type=pathlib.Path, default=pathlib.Path("artifacts/update-smoke"))
     args = parser.parse_args()
     parts = [int(part) for part in args.update_version.split(".")]

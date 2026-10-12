@@ -12,6 +12,11 @@ class CatalogIndex(val channels: List<Channel>) {
         }
     }.entries.sortedBy { SourceGroups.rank(it.key) }.associate { it.key to it.value.toList() }
     val groups = byGroup.keys.toList()
+    val menuGroups = groups.map(RegionalGroups::parent).distinct()
+    private val children = groups.filter { RegionalGroups.parent(it) != it }.groupBy(RegionalGroups::parent)
+        .mapValues { (_, values) -> values.sortedBy(RegionalGroups::rank) }
+    fun childrenOf(parent: String): List<String> = children[parent].orEmpty()
+    fun firstLeaf(parent: String): String = childrenOf(parent).firstOrNull() ?: parent
     private val names = channels.map { normalize(it.name) + "\n" + normalize(it.id) }
 
     /** Searches all groups, without rebuilding normalized names on each keystroke. */

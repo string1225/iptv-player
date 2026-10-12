@@ -281,7 +281,7 @@ class MainActivity : Activity() {
 
     private fun showHelp() {
         showDialog(AlertDialog.Builder(this).setTitle("遥控器使用说明")
-            .setMessage("打开应用：自动播放指定的默认频道；首次优先 CCTV1。\n\n↑ / ↓：当前分组上一台 / 下一台\n确定：打开列表、播放选中频道\n← / →：上一条 / 下一条线路\n菜单：默认频道、收藏、线路、停用、刷新\n列表分类列：上下连续切分类，右键进入频道\n列表第一行向上：搜索按钮，确定输入名称\n数字键：输入频道编号后自动跳转\n播放 / 暂停键：暂停或继续\n返回：关闭列表；全屏连按两次退出\n\nZ 为 zbds，I 为 iptv-org。线路失败或稳定播放 10 秒后记入本地。全部线路失败及手动停用的频道，上下换台会跳过，仍可在列表选择重试。成功播放可恢复自动判断；手动停用需在菜单取消。IPv6 线路需要网络支持 IPv6。观看仍需联网。")
+            .setMessage("打开应用：自动播放指定的默认频道；首次优先 CCTV1。\n\n↑ / ↓：当前分组上一台 / 下一台\n确定：打开列表、播放选中频道\n← / →：上一条 / 下一条线路\n菜单：默认频道、收藏、线路、停用、刷新\n列表分类列：上下连续切分类，右键进入下一层\n地方频道：先选地区，再进入频道列\n列表第一行向上：搜索按钮，确定输入名称\n数字键：输入频道编号后自动跳转\n播放 / 暂停键：暂停或继续\n返回：逐级返回；全屏连按两次退出\n\nZ 为 zbds，D 为补充源，I 为 iptv-org。线路失败或稳定播放 10 秒后记入本地。全部线路失败及手动停用的频道，上下换台会跳过，仍可在列表选择重试。成功播放可恢复自动判断；手动停用需在菜单取消。IPv6 线路需要网络支持 IPv6。观看仍需联网。")
             .setPositiveButton("知道了", null).create())
     }
 
@@ -441,7 +441,7 @@ class MainActivity : Activity() {
     }
 
     private fun handleBack() {
-        if (drawer.isOpen) { closeDrawer(); return }
+        if (drawer.isOpen) { if (!drawer.handleBack()) closeDrawer(); return }
         val now = android.os.SystemClock.elapsedRealtime()
         if (now - lastBackAt < 2_000) finish()
         else { lastBackAt = now; toast("再按一次返回退出"); showInfo() }

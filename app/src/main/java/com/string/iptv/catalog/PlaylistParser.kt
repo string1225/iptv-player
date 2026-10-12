@@ -83,7 +83,8 @@ object PlaylistParser {
                 if (name != null && decoded != null && '\r' !in decoded && '\n' !in decoded) headers[name] = decoded
             }
         }
-        return Stream(url, sourceId, headers.filterValues { '\r' !in it && '\n' !in it })
+        val safeHeaders = if (headers.isEmpty()) emptyMap() else headers.filterValues { '\r' !in it && '\n' !in it }
+        return Stream(url, sourceId, safeHeaders)
     }
 
     private fun metadataSeparator(line: String): Int {
