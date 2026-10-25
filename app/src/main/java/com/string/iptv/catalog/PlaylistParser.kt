@@ -24,14 +24,14 @@ object PlaylistParser {
                     val attrs = attribute.findAll(line.substring(0, separator)).associate {
                         it.groupValues[1].lowercase(Locale.ROOT) to (it.groupValues[2].ifEmpty { it.groupValues[3] })
                     }
-                    pending = Metadata(line.substring(separator + 1).trim(), attrs["group-title"].orEmpty().ifEmpty { group },
+                    pending = Metadata(line.substring(separator + 1).trim(), normalizeGroup(attrs["group-title"].orEmpty().ifEmpty { group }),
                         attrs["tvg-id"].orEmpty(), attrs["tvg-logo"].orEmpty())
                     attrs["http-user-agent"]?.let { headers["User-Agent"] = it }
                     attrs["http-referrer"]?.let { headers["Referer"] = it }
                     attrs["http-referer"]?.let { headers["Referer"] = it }
                 }
                 line.startsWith("#EXTGRP:", true) -> {
-                    group = line.substringAfter(':').trim().ifEmpty { "未分类" }
+                    group = normalizeGroup(line.substringAfter(':'))
                     pending = pending?.copy(group = group)
                 }
                 line.startsWith("#EXTVLCOPT:", true) -> {
@@ -69,6 +69,8 @@ object PlaylistParser {
         // Some feeds return an update announcement MP4 when no television routes exist.
         return entries.filterNot { it.group.trim() == "更新时间" || it.name.trim() == "支持作者" }
     }
+
+    private fun normalizeGroup(value: String): String = value.trim().removeSuffix(",#genre#").trim().ifEmpty { "未分类" }
 
     private fun parseStream(value: String, sourceId: String, inherited: Map<String, String>): Stream? {
         val url = value.substringBefore('|').trim()

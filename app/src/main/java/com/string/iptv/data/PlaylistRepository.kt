@@ -29,8 +29,9 @@ data class CatalogSnapshot(val index: CatalogIndex, val sources: List<SourceStat
     val channels get() = index.channels
 }
 
-/** Reads cache first; independent source downloads cannot overwrite each other's snapshots. */
+/** Reads bundled lists and cache first; independent downloads cannot overwrite each other's snapshots. */
 class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapshot) -> Unit) {
+    private val assets = context.assets
     private val directory = File(context.filesDir, "playlists").apply { mkdirs() }
     private val main = Handler(Looper.getMainLooper())
     private val coordinator = Executors.newSingleThreadExecutor()
@@ -45,6 +46,7 @@ class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapsho
             else it.copy(url = direct, mirrors = emptyList())
         }
     } else BuiltInSources.all
+    private val remoteSources = sources.filter { it.assetPath == null }
     @Volatile private var closed = false
     private val sourceEntries = linkedMapOf<String, List<PlaylistEntry>>()
     private val statuses = linkedMapOf<String, SourceStatus>()
@@ -57,6 +59,17 @@ class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapsho
         coordinator.execute {
             try {
                 for (source in sources) {
+                    val assetPath = source.assetPath
+                    if (assetPath != null) {
+                        val parsed = runCatching {
+                            assets.open(assetPath).bufferedReader(Charsets.UTF_8).use { PlaylistParser.parse(it.readText(), source.id) }
+                        }
+                        val entries = parsed.getOrDefault(emptyList())
+                        sourceEntries[source.id] = entries
+                        statuses[source.id] = SourceStatus(source, entries.size, loading = false,
+                            error = if (entries.isEmpty()) "内置频道列表读取失败" else null)
+                        continue
+                    }
                     if (source.id !in sourceEntries) {
                         val file = File(directory, "${source.id}.playlist")
                         val parsed = runCatching { PlaylistParser.parse(AtomicFile(file).openRead().bufferedReader(Charsets.UTF_8).use { it.readText() }, source.id) }.getOrDefault(emptyList())
@@ -76,17 +89,17 @@ class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapsho
                         statuses[source.id] = SourceStatus(source, parsed.size, parsed.isNotEmpty(), updatedAt = file.lastModified().takeIf { it > 0 })
                     } else statuses[source.id] = statuses.getValue(source.id).copy(loading = true, error = null)
                 }
-                // Cache is always published before submitting any network work.
+                // Bundled lists and cache are published before submitting any network work.
                 rebuildIndex()
-                fromCache = index.channels.isNotEmpty()
-                publish(true)
+                fromCache = remoteSources.any { sourceEntries[it.id].orEmpty().isNotEmpty() }
+                publish(remoteSources.isNotEmpty())
                 val completions = ExecutorCompletionService<DownloadResult>(downloads)
                 var catalogDirty = false
-                sources.forEach { source ->
+                remoteSources.forEach { source ->
                     val cachedDigest = digests[source.id]
                     completions.submit { download(source, cachedDigest) }
                 }
-                repeat(sources.size) { index ->
+                repeat(remoteSources.size) { index ->
                     if (closed) return@execute
                     val result = completions.take().get()
                     val source = result.source
@@ -113,12 +126,12 @@ class PlaylistRepository(context: Context, private val onUpdate: (CatalogSnapsho
                     }
                     // With cache, merge only once at the end. Status-only updates reuse the
                     // index, so refresh cannot repeatedly invalidate a 10,000-channel UI.
-                    if (catalogDirty && (index == sources.lastIndex || this.index.channels.isEmpty() && result.entries.isNotEmpty())) {
+                    if (catalogDirty && (index == remoteSources.lastIndex || this.index.channels.isEmpty() && result.entries.isNotEmpty())) {
                         rebuildIndex()
                         catalogDirty = false
                         fromCache = false
                     }
-                    publish(index != sources.lastIndex)
+                    publish(index != remoteSources.lastIndex)
                 }
             } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()

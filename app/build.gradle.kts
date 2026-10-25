@@ -45,6 +45,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     buildFeatures { buildConfig = true }
+    sourceSets { getByName("test").resources.directories.add(file("src/main/assets").path) }
     lint { abortOnError = true }
 }
 

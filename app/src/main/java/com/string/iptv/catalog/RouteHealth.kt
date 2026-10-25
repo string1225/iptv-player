@@ -18,9 +18,16 @@ class RouteHealth(
     fun allUnavailable(channel: Channel): Boolean =
         channel.streams.isEmpty() || channel.streams.all { state(it) == RouteState.UNAVAILABLE }
 
-    /** Good, untested, then failed routes. Manual selection still retries every route. */
+    /** Try the preferred feed first unless failed, then good/untested backups, then failed routes. */
     fun order(channel: Channel, rememberedUrl: String?): List<Int> = channel.streams.indices.sortedWith(
-        compareBy<Int> { when (state(channel.streams[it])) {
+        compareBy<Int> {
+            val stream = channel.streams[it]
+            when {
+                state(stream) == RouteState.UNAVAILABLE -> 2
+                stream.sourceId == BuiltInSources.preferred.id -> 0
+                else -> 1
+            }
+        }.thenBy { when (state(channel.streams[it])) {
             RouteState.AVAILABLE -> 0
             RouteState.UNKNOWN -> 1
             RouteState.UNAVAILABLE -> 2

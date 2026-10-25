@@ -133,6 +133,7 @@ class MainActivity : Activity() {
 
     private fun acceptCatalog(snapshot: CatalogSnapshot) {
         catalog = snapshot
+        playback.channel?.id?.let(snapshot.index.byId::get)?.let(playback::updateChannel)
         updateDrawer()
         if (playback.channel == null) {
             // A saved default must get a chance to arrive from every source on a cold start.
@@ -269,6 +270,7 @@ class MainActivity : Activity() {
                 status.loading -> "更新中"
                 status.cached -> "使用缓存"
                 status.error != null -> "失败"
+                status.source.assetPath != null -> "已内置 · 优先"
                 else -> "已更新"
             }
             val time = status.updatedAt?.let { SimpleDateFormat("MM-dd HH:mm", Locale.CHINA).format(Date(it)) }
@@ -281,7 +283,7 @@ class MainActivity : Activity() {
 
     private fun showHelp() {
         showDialog(AlertDialog.Builder(this).setTitle("遥控器使用说明")
-            .setMessage("打开应用：自动播放指定的默认频道；首次优先 CCTV1。\n\n↑ / ↓：当前分组上一台 / 下一台\n确定：打开列表、播放选中频道\n← / →：上一条 / 下一条线路\n菜单：默认频道、收藏、线路、停用、刷新\n列表分类列：上下连续切分类，右键进入下一层\n地方频道：先选地区，再进入频道列\n列表第一行向上：搜索按钮，确定输入名称\n数字键：输入频道编号后自动跳转\n播放 / 暂停键：暂停或继续\n返回：逐级返回；全屏连按两次退出\n\nZ 为 zbds，D 为补充源，I 为 iptv-org。线路失败或稳定播放 10 秒后记入本地。全部线路失败及手动停用的频道，上下换台会跳过，仍可在列表选择重试。成功播放可恢复自动判断；手动停用需在菜单取消。IPv6 线路需要网络支持 IPv6。观看仍需联网。")
+            .setMessage("打开应用：自动播放指定的默认频道；首次优先 CCTV1。\n\n↑ / ↓：当前分组上一台 / 下一台\n确定：打开列表、播放选中频道\n← / →：上一条 / 下一条线路\n菜单：默认频道、收藏、线路、停用、刷新\n列表分类列：上下连续切分类，右键进入下一层\n地方频道：先选地区，再进入频道列\n列表第一行向上：搜索按钮，确定输入名称\n数字键：输入频道编号后自动跳转\n播放 / 暂停键：暂停或继续\n返回：逐级返回；全屏连按两次退出\n\nIPv6 为内置优先源，Z 为 zbds，D 为补充源，I 为 iptv-org。同名频道优先尝试内置 IPv6 线路，失败后切换备用。线路失败或稳定播放 10 秒后记入本地。全部线路失败及手动停用的频道，上下换台会跳过，仍可在列表选择重试。成功播放可恢复自动判断；手动停用需在菜单取消。IPv6 线路需要网络支持 IPv6。观看仍需联网。")
             .setPositiveButton("知道了", null).create())
     }
 

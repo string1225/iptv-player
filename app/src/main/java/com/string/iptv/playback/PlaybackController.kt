@@ -100,6 +100,23 @@ class PlaybackController(
         playRoute()
     }
 
+    /** Add refreshed backup routes without interrupting the stream already playing. */
+    fun updateChannel(value: Channel) {
+        val previous = channel ?: return
+        if (value.id != previous.id || value == previous) return
+        if (failed && value.streams.any { it !in previous.streams && preferences.routeHealth.state(it) != RouteState.UNAVAILABLE }) {
+            select(value)
+            return
+        }
+        val active = previous.streams.getOrNull(routes.current) ?: return
+        val activeIndex = value.streams.indexOfFirst { it.url == active.url && it.headers == active.headers }
+        if (activeIndex < 0) return
+        channel = value
+        val order = preferences.routeHealth.order(value, preferences.goodRoute(value.id))
+        routes = RouteCycle(listOf(activeIndex) + order.filter { it != activeIndex })
+        publish()
+    }
+
     private fun playRoute() {
         handler.removeCallbacks(timeout)
         handler.removeCallbacks(stablePlayback)

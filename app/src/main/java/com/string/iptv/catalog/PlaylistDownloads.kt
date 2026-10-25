@@ -14,6 +14,7 @@ object PlaylistDownloads {
     }
 
     fun candidates(source: PlaylistSource): List<String> = buildList {
+        if (source.assetPath != null) return@buildList
         if (source.url.startsWith("https://raw.githubusercontent.com/")) add("https://gh-proxy.org/${source.url}")
         add(source.url)
         addAll(source.mirrors)

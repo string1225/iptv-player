@@ -3,9 +3,12 @@ package com.string.iptv.catalog
 import java.util.Locale
 import java.security.MessageDigest
 
-data class PlaylistSource(val id: String, val name: String, val url: String, val mirrors: List<String> = emptyList())
+data class PlaylistSource(val id: String, val name: String, val url: String, val mirrors: List<String> = emptyList()) {
+    val assetPath: String? get() = url.takeIf { it.startsWith("asset:///") }?.removePrefix("asset:///")
+}
 
 object BuiltInSources {
+    val preferred = PlaylistSource("preferredipv6", "IPv6 · 优先源", "asset:///playlists/IPV6.m3u")
     val collected = listOf(
         PlaylistSource("dmyernestlu", "D · myernestlu", "https://myernestlu.github.io/zby.txt"),
         PlaylistSource("dzbefine", "D · zbefine", "https://raw.githubusercontent.com/zbefine/iptv/main/iptv.m3u"),
@@ -17,6 +20,7 @@ object BuiltInSources {
             listOf("https://live.fanmingming.cn/tv/m3u/ipv6.m3u")),
     )
     val all = listOf(
+        preferred,
         PlaylistSource("zbds4m3u", "直播电视 · IPv4 M3U", "https://live.zbds.top/tv/iptv4.m3u"),
         PlaylistSource("zbds4txt", "直播电视 · IPv4 TXT", "https://live.zbds.top/tv/iptv4.txt"),
         PlaylistSource("zbds6m3u", "直播电视 · IPv6 M3U", "https://live.zbds.top/tv/iptv6.m3u"),
@@ -66,6 +70,7 @@ data class Channel(
 object SourceGroups {
     private val collectedIds by lazy { BuiltInSources.collected.map { it.id }.toSet() }
     fun label(entry: PlaylistEntry): String = when {
+        entry.stream.sourceId == BuiltInSources.preferred.id -> "IPv6 · ${RegionalGroups.category(entry)}"
         entry.stream.sourceId.startsWith("zbds") -> "Z · ${RegionalGroups.category(entry)}"
         entry.stream.sourceId in collectedIds -> "D · ${RegionalGroups.category(entry)}"
         entry.stream.sourceId == "iptvorg" -> "I · ${RegionalGroups.category(entry)}"
@@ -73,16 +78,17 @@ object SourceGroups {
     }
 
     fun rank(group: String): Int = when {
-        group.startsWith("Z · ") -> 0
-        group.startsWith("D · ") -> 1
-        group.startsWith("I · ") -> 2
-        else -> 3
+        group.startsWith("IPv6 · ") -> 0
+        group.startsWith("Z · ") -> 1
+        group.startsWith("D · ") -> 2
+        group.startsWith("I · ") -> 3
+        else -> 4
     }
 }
 
 object ChannelIdentity {
     private val quality = Regex("\\s*[（(](?:\\d{3,4}p|[248]K|HD|SD|高清|标清)[）)]", RegexOption.IGNORE_CASE)
-    private val cctv = Regex("^cctv[- _]*(\\d{1,2})(\\+?)(?:[- _]*(?:综合|财经|综艺|中文国际|体育赛事|体育|电影|国防军事|电视剧|纪录|科教|戏曲|新闻|少儿|音乐|农业农村|农业))?(?:[- _]*(?:hd|sd|高清|标清|超清))?$", RegexOption.IGNORE_CASE)
+    private val cctv = Regex("^cctv[- _]*(\\d{1,2})(\\+?)(?:[- _]*(?:综合|财经|综艺|中文国际|体育赛事|体育|电影|国防军事|电视剧|纪录|科教|戏曲|新闻|少儿|音乐|奥林匹克|农业农村|农业))?(?:[- _]*(?:hd|sd|高清|标清|超清))?$", RegexOption.IGNORE_CASE)
     private val whitespace = Regex("\\s+")
 
     fun key(name: String): String {
