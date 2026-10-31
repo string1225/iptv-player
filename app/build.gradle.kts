@@ -2,6 +2,8 @@ plugins {
     id("com.android.application")
 }
 
+val decoderSources by configurations.creating { isTransitive = false }
+
 android {
     namespace = "com.string.iptv"
     compileSdk = 36
@@ -10,7 +12,7 @@ android {
         applicationId = "com.string.iptv"
         minSdk = 29
         targetSdk = 36
-        val appVersion = providers.gradleProperty("appVersion").orElse("0.3.1").get()
+        val appVersion = providers.gradleProperty("appVersion").orElse("0.3.2").get()
         require(appVersion.matches(Regex("\\d+\\.\\d+\\.\\d+")))
         val parts = appVersion.split('.').map(String::toInt)
         require(parts[0] in 0..2000 && parts[1] in 0..999 && parts[2] in 0..999)
@@ -58,5 +60,14 @@ dependencies {
     implementation("androidx.media3:media3-ui:$media3")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("androidx.core:core:1.17.0")
+    implementation("javazoom:jlayer:1.0.1")
+    decoderSources("javazoom:jlayer:1.0.1:sources")
     testImplementation("junit:junit:4.13.2")
+}
+
+tasks.register<Zip>("packageDecoderSources") {
+    archiveFileName.set("decoder-sources.zip")
+    destinationDirectory.set(layout.buildDirectory.dir("outputs/third-party"))
+    from(decoderSources) { into("jlayer") }
+    from("src/main/assets/licenses") { into("licenses") }
 }

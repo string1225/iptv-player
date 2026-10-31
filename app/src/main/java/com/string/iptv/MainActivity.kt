@@ -225,6 +225,12 @@ class MainActivity : Activity() {
         items += "频道源状态" to { showSourceStatus() }
         items += (if (updater.state.phase == UpdatePhase.READY) "软件更新 · 新版已就绪" else "软件更新") to { showUpdateDialog() }
         items += "遥控器使用说明" to { showHelp() }
+        items += "开源许可" to {
+            val notice = assets.open("licenses/NOTICE.txt").bufferedReader().use { it.readText() }
+            val license = assets.open("licenses/LGPL-2.0-or-later.txt").bufferedReader().use { it.readText() }
+            showDialog(AlertDialog.Builder(this).setTitle("开源许可").setMessage("$notice\n\n$license")
+                .setPositiveButton("返回", null).create())
+        }
         if (channel != null) items += (if (channel.id in preferences.disabledChannels) "取消不可用标记（恢复上下换台）" else "标记为不可用（上下换台跳过）") to {
             val disabled = preferences.toggleDisabled(channel)
             updateDrawer()

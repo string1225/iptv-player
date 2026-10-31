@@ -24,18 +24,18 @@
 在已验证的提交上创建并推送正式标签，例如：
 
 ```powershell
-git tag v0.3.1
-git push origin v0.3.1
+git tag v0.3.2
+git push origin v0.3.2
 ```
 
-`.github/workflows/release.yml` 执行测试、Release Lint、签名构建和签名验证，再创建 GitHub Release，上传 `iptv-player.apk` 和 `SHA256SUMS`。GitHub 为已上传资产提供摘要，客户端使用 API 摘要验证下载，不依赖加速站的返回值建立信任。
+`.github/workflows/release.yml` 执行测试、Release Lint、签名构建和签名验证，再创建 GitHub Release，上传 `iptv-player.apk`、`SHA256SUMS` 和 `decoder-sources.zip`。后者由 `:app:packageDecoderSources` 生成，包含完整未经修改的 JLayer 1.0.1 源码 JAR 和 LGPL 许可，随每次正式发布提供。GitHub 为已上传资产提供摘要，客户端使用 API 摘要验证下载，不依赖加速站的返回值建立信任。
 
-版本为 `major.minor.patch`，`versionCode = major × 1,000,000 + minor × 1,000 + patch`；minor / patch 为 0–999，major 为 0–2000。标签、APK 版本必须一致，发布版本必须单调增加。当前版本 0.3.1 / 3001；下一版例如 v0.3.2 / 3002。不要修改同一 Release 的 APK 来替代发布新版本。
+版本为 `major.minor.patch`，`versionCode = major × 1,000,000 + minor × 1,000 + patch`；minor / patch 为 0–999，major 为 0–2000。标签、APK 版本必须一致，发布版本必须单调增加。当前版本 0.3.2 / 3002；下一版例如 v0.3.3 / 3003。不要修改同一 Release 的 APK 来替代发布新版本。
 
 本地有发布密钥时，可通过环境变量 `IPTV_STORE_FILE`（密钥路径）及后三个同名密码 / 别名环境变量构建：
 
 ```powershell
-./gradlew.bat :app:assembleRelease '-PappVersion=0.3.1'
+./gradlew.bat :app:assembleRelease :app:packageDecoderSources '-PappVersion=0.3.2'
 ```
 
 未提供密钥时，本地 Release 产物未签名，只用于构建检查，不能作为更新 APK。调试和正式包的测试 URL 常量相互独立，Release 固定为空，避免将模拟器测试接口发布给用户。

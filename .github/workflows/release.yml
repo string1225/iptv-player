@@ -36,14 +36,15 @@ jobs:
           IPTV_KEY_ALIAS: ${{ secrets.IPTV_KEY_ALIAS }}
           IPTV_KEY_PASSWORD: ${{ secrets.IPTV_KEY_PASSWORD }}
         run: |
-          ./gradlew :app:testDebugUnitTest :app:lintRelease :app:assembleRelease -PappVersion="${GITHUB_REF_NAME#v}" --console=plain
+          ./gradlew :app:testDebugUnitTest :app:lintRelease :app:assembleRelease :app:packageDecoderSources -PappVersion="${GITHUB_REF_NAME#v}" --console=plain
           cp app/build/outputs/apk/release/app-release.apk iptv-player.apk
+          cp app/build/outputs/third-party/decoder-sources.zip decoder-sources.zip
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify iptv-player.apk
           sha256sum iptv-player.apk > SHA256SUMS
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" iptv-player.apk SHA256SUMS --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
+        run: gh release create "$GITHUB_REF_NAME" iptv-player.apk SHA256SUMS decoder-sources.zip --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
       - name: Remove temporary signing key
         if: always()
         run: rm -f "$RUNNER_TEMP/iptv-release.jks"

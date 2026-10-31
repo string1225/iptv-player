@@ -8,8 +8,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import com.string.iptv.catalog.Channel
@@ -43,8 +43,14 @@ class PlaybackController(
     private var lastMessage = "正在准备播放器"
     private var failed = false
     private val timeout = Runnable { recover("线路连接超时") }
+    private val checkAudio = Runnable {
+        val p = player
+        if (p?.playbackState == Player.STATE_READY && !p.currentTracks.isTypeSelected(C.TRACK_TYPE_AUDIO)) {
+            recover(if (p.currentTracks.containsType(C.TRACK_TYPE_AUDIO)) "当前线路音频格式无法播放" else "当前线路没有音轨")
+        }
+    }
     private val stablePlayback = Runnable {
-        if (player?.isPlaying == true) {
+        if (player?.isPlaying == true && player?.currentTracks?.isTypeSelected(C.TRACK_TYPE_AUDIO) == true) {
             routes.recovered()
             channel?.let { c -> c.streams.getOrNull(routes.current)?.let {
                 preferences.rememberRoute(c.id, it.url)
@@ -56,7 +62,7 @@ class PlaybackController(
 
     fun start() {
         if (player != null) return
-        player = ExoPlayer.Builder(appContext, DefaultRenderersFactory(appContext).setEnableDecoderFallback(true))
+        player = ExoPlayer.Builder(appContext, TvRenderersFactory(appContext))
             .setLoadControl(DefaultLoadControl.Builder().setBufferDurationsMs(5_000, 25_000, 800, 1_500).build())
             .build().also { p ->
                 p.setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
@@ -64,6 +70,7 @@ class PlaybackController(
                 p.addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(state: Int) {
                         handler.removeCallbacks(timeout)
+                        handler.removeCallbacks(checkAudio)
                         when (state) {
                             Player.STATE_IDLE -> Unit
                             Player.STATE_BUFFERING -> {
@@ -73,6 +80,7 @@ class PlaybackController(
                             Player.STATE_READY -> {
                                 failed = false
                                 lastMessage = if (paused) "已暂停" else "正在直播"
+                                handler.postDelayed(checkAudio, 1_000)
                             }
                             Player.STATE_ENDED -> { recover("线路已结束"); return }
                         }
@@ -80,10 +88,26 @@ class PlaybackController(
                     }
 
                     override fun onPlayerError(error: PlaybackException) { recover("线路不可用") }
+                    override fun onTracksChanged(tracks: Tracks) {
+                        handler.removeCallbacks(checkAudio)
+                        if (tracks.groups.isNotEmpty() && !tracks.isTypeSelected(C.TRACK_TYPE_AUDIO)) {
+                            handler.postDelayed(checkAudio, 1_000)
+                        }
+                    }
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
                         handler.removeCallbacks(stablePlayback)
-                        if (isPlaying) handler.postDelayed(stablePlayback, 10_000)
+                        if (isPlaying) {
+                            handler.postDelayed(stablePlayback, 10_000)
+                            handler.removeCallbacks(checkAudio)
+                            handler.postDelayed(checkAudio, 1_000)
+                        }
                         publish()
+                    }
+                })
+                p.addAnalyticsListener(object : AnalyticsListener {
+                    override fun onAudioDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String,
+                        initializedTimestampMs: Long, initializationDurationMs: Long) {
+                        android.util.Log.i("IPTVAudio", "Audio decoder: $decoderName")
                     }
                 })
                 view.player = p
@@ -119,6 +143,7 @@ class PlaybackController(
 
     private fun playRoute() {
         handler.removeCallbacks(timeout)
+        handler.removeCallbacks(checkAudio)
         handler.removeCallbacks(stablePlayback)
         val p = player ?: return
         val route = channel?.streams?.getOrNull(routes.current) ?: return
@@ -138,6 +163,7 @@ class PlaybackController(
 
     private fun recover(reason: String) {
         handler.removeCallbacks(timeout)
+        handler.removeCallbacks(checkAudio)
         if (player == null || channel == null || paused || failed) return
         handler.removeCallbacks(stablePlayback)
         channel?.streams?.getOrNull(routes.current)?.let {

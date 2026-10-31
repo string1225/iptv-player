@@ -17,7 +17,8 @@
 - 用户提供的 `IPV6.m3u` 随 APK 内置，142 条线路（128 条 IPv6 直连、14 条域名线路）启动即载入；同名频道优先尝试这套源，已失败的线路让位于备用。另有 12 个远端源以最多 5 个任务并行更新，各自缓存；某个源失败时保留它上次成功的频道列表。GitHub 列表优先加速站，失败回退原地址。
 - 缓存优先启动，随后异步静默更新；索引、解析和搜索均在后台执行，源状态变化复用频道索引。源下载失败不覆盖默认频道设置。
 - GitHub Release 手动 / 自动更新：默认开启后台检查和下载，加速站优先、GitHub 回退；校验通过后在菜单中安装。
-- Media3 / ExoPlayer 播放 HLS、DASH 和普通 HTTP 视频，优先使用设备解码器并允许解码器回退。
+- Media3 / ExoPlayer 播放 HLS、DASH 和普通 HTTP 视频。MP2（MPEG-1 Layer II，32 / 44.1 / 48 kHz、单 / 双声道）随包软件解码为 16 位 PCM，其他格式继续使用系统解码器并允许解码器回退。
+- 线路缺少可播放的音轨时自动切换备用线路；只有音轨已选中的稳定播放才记为可用，避免“有画面无声音”被误记为成功。
 
 “自动播放”指打开应用后的行为。缓存只保存频道列表，观看仍需联网。IPv6 线路需设备网络支持 IPv6。
 
@@ -88,6 +89,8 @@ Android 10 安装需要用户允许“安装未知应用”，然后在系统安
 
 ## 验证
 
+0.3.2 新增 MP2 软件解码，37 项单元测试覆盖连续帧、单双声道、三种广播采样率、解码状态重置、损坏 / 截断帧拒绝和孤立坏帧恢复；连续三帧解码失败则触发线路恢复。API 29 的 11 项音频回归包含实际抓取的 CCTV1 MP2 音轨、系统 PCM 音频输出、稳定播放、暂停 / 恢复、AAC 原解码路径、切回 MP2 和无音轨自动回退。仓库中的 MP2 测试音频由合成正弦波生成，未提交电视节目片段。
+
 0.3.1 通过 31 项单元测试、Release Lint（0 errors）及签名构建；与之前交付的 0.3.0 APK 签名一致，版本递增到 3001。正式包不可调试，测试接口为空，包含内置优先源。
 
 2026-10-25 优先源改动通过 31 项单元测试、Debug Lint（0 errors）和构建。API 29 验证原文件随 APK 打包、离线首次启动 / 重启载入 142 条线路、优先分类和源状态；本地播放用例验证优先线路失败后恢复到延后到达的备用线路，以及后台增加备用线路时不打断优先线路。正式调试 APK 的测试地址为空，v2 签名校验通过。当前开发网络连接 IPv6 直播地址超时，未据此宣称实际直播连通性已验证。
@@ -113,7 +116,9 @@ python tools/tv_smoke.py --adb <adb完整路径> --serial emulator-5556 --media 
 
 `tools/tv_regions_smoke.py` 验证 35 个地区连续滚动、两级菜单进退、12,042 台目录中的省内分页、合并线路、旧偏好迁移、地区默认台重启恢复、全部源失败时缓存继续播放，以及省内直接换台。需 API 29 且名称含 IPTV 的专用 AVD，显式传入 `--serial`；会清除本应用数据。
 
-`tools/tv_update_smoke.py` 额外测试 12,348 台分页 / 搜索、慢速远端下缓存先播放、手动 / 自动更新、加速站失败回退、未知来源授权、系统安装确认、重启恢复和错误签名。需要 Debug 同时设置 `-PtestPlaylistBaseUrl` 与 `-PtestUpdateBaseUrl`，并提供 0.3.2 同签名 / 异签名测试 APK（可用 `--update-version` 指定其他更新版本）；运行参数见脚本 `--help`。
+`tools/tv_update_smoke.py` 额外测试 12,348 台分页 / 搜索、慢速远端下缓存先播放、手动 / 自动更新、加速站失败回退、未知来源授权、系统安装确认、重启恢复和错误签名。需要 Debug 同时设置 `-PtestPlaylistBaseUrl` 与 `-PtestUpdateBaseUrl`，并提供 0.3.3 同签名 / 异签名测试 APK（可用 `--update-version` 指定其他更新版本）；运行参数见脚本 `--help`。
+
+`tools/tv_audio_smoke.py` 在专用 IPTV 模拟器验证 MP2 软件解码、稳定播放、暂停 / 恢复、AAC 原解码路径、切回 MP2，以及无音轨线路自动回退。Debug 使用 `-PtestPlaylistBaseUrl=http://10.0.2.2:8877`；传入 `--adb`、`--serial`、`--apk`、`--mp2-media`、`--aac-media`、`--silent-media`，三个媒体文件至少 30 秒。实际抓取的音轨可在本地用于回归；脚本记录解码器名称、音频输出和线路状态。
 
 两种测试 URL 替换只在 Debug 有效，Release 始终使用真实源 / GitHub。交付调试 APK 前重新运行 **不含任何测试参数** 的正常构建。截图 / 结果在忽略的 `artifacts/` 中。
 
@@ -125,3 +130,7 @@ python tools/tv_smoke.py --adb <adb完整路径> --serial emulator-5556 --media 
 - [首版设计与取舍](docs/android-tv-design.md)
 
 首版不含节目单 EPG、回看、P2P 私有协议、设备开机自启动或账号系统。不申请电话状态和共享存储权限；使用网络权限、更新安装请求权限，以及 Media3 合并的普通 WAKE_LOCK 权限。
+
+## 音频解码器许可
+
+MP2 解码使用未经修改的 [JLayer 1.0.1](https://repo.maven.apache.org/maven2/javazoom/jlayer/1.0.1/)，遵循 LGPL-2.0-or-later。完整许可和来源见 [NOTICE](app/src/main/assets/licenses/NOTICE.txt)，应用菜单也提供“开源许可”。每个正式 Release 附带 `decoder-sources.zip`，包含完整 JLayer 源码 JAR 和许可；应用源码和重建所需配置随版本标签提供。应用其余代码仍遵循仓库的 MIT 许可。

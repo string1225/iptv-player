@@ -1,0 +1,20 @@
+Third-party audio decoder
+
+This application includes the unmodified JLayer 1.0.1 library by JavaZOOM
+and its contributors, licensed under the GNU Library General Public License,
+version 2 or (at your option) any later version. It is used to decode MPEG-1
+Layer II audio to PCM. Other application code retains its own license.
+
+Library artifact: javazoom:jlayer:1.0.1
+Original project: https://www.javazoom.net/javalayer/javalayer.html
+Complete library source:
+https://repo.maven.apache.org/maven2/javazoom/jlayer/1.0.1/jlayer-1.0.1-sources.jar
+
+Each application Release also provides decoder-sources.zip containing the
+complete unmodified library source JAR and this license notice. Complete
+application source and build instructions are available at the same version
+tag in https://github.com/string1225/iptv-player . Users may rebuild the
+application with a modified library. Reverse engineering for debugging such
+library modifications is permitted under the library license.
+
+The full library license is included in LGPL-2.0-or-later.txt next to this file.
