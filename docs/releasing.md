@@ -2,6 +2,10 @@
 
 客户端读取 [GitHub latest Release API](https://docs.github.com/en/rest/releases/releases#get-the-latest-release)，使用资产的 `browser_download_url`、`size`、`digest`（SHA-256），不下载源代码 ZIP、不接受预发布版本。正式 APK 必须命名为 `iptv-player.apk`。
 
+## 每次更新都发布
+
+本项目每次更新默认完成验证、提交推送和新版正式 Release 发布。只推送源码不会产生客户端可见的更新，不能作为完整交付。先递增默认版本，再验证并推送提交和对应标签，等待发布工作流成功；最后确认公开 `releases/latest` 接口指向新版本，APK 资产及 SHA-256 有效，再报告完成。项目执行规则见 [AGENTS.md](../AGENTS.md)。
+
 ## 一次配置
 
 持续使用同一个 Android 签名密钥，安全备份，不提交进 Git。将以下四个值配置为仓库 Actions Secrets：
@@ -13,25 +17,25 @@
 | `IPTV_KEY_ALIAS` | 密钥别名 |
 | `IPTV_KEY_PASSWORD` | 密钥密码 |
 
-工作流缺少任一 Secret 会明确失败，不会生成无法连续更新的临时签名，也不会发布未签名文件。密钥只在 runner 临时目录解码，最后清理。当前本地调试 APK 使用本机 Android debug key；正式 Release 若使用另一密钥，需要先卸载调试版并安装正式版（会清除应用数据），随后正式版可持续覆盖更新。
+工作流缺少任一 Secret 会明确失败，不会生成无法连续更新的临时签名，也不会发布未签名文件。密钥只在 runner 临时目录解码，最后清理。为兼容已交付的 0.3.0 安装包，v0.3.1 起沿用其现有签名密钥作为持续发布签名，Release 构建保持不可调试。后续发布继续使用仓库加密保存的同一密钥，不重新生成；旧版可以覆盖升级并保留数据。
 
 ## 发布版本
 
 在已验证的提交上创建并推送正式标签，例如：
 
 ```powershell
-git tag v0.3.0
-git push origin v0.3.0
+git tag v0.3.1
+git push origin v0.3.1
 ```
 
 `.github/workflows/release.yml` 执行测试、Release Lint、签名构建和签名验证，再创建 GitHub Release，上传 `iptv-player.apk` 和 `SHA256SUMS`。GitHub 为已上传资产提供摘要，客户端使用 API 摘要验证下载，不依赖加速站的返回值建立信任。
 
-版本为 `major.minor.patch`，`versionCode = major × 1,000,000 + minor × 1,000 + patch`；minor / patch 为 0–999，major 为 0–2000。标签、APK 版本必须一致，发布版本必须单调增加。当前版本 0.3.0 / 3000；下一版例如 v0.3.1 / 3001。不要修改同一 Release 的 APK 来替代发布新版本。
+版本为 `major.minor.patch`，`versionCode = major × 1,000,000 + minor × 1,000 + patch`；minor / patch 为 0–999，major 为 0–2000。标签、APK 版本必须一致，发布版本必须单调增加。当前版本 0.3.1 / 3001；下一版例如 v0.3.2 / 3002。不要修改同一 Release 的 APK 来替代发布新版本。
 
 本地有发布密钥时，可通过环境变量 `IPTV_STORE_FILE`（密钥路径）及后三个同名密码 / 别名环境变量构建：
 
 ```powershell
-./gradlew.bat :app:assembleRelease '-PappVersion=0.3.0'
+./gradlew.bat :app:assembleRelease '-PappVersion=0.3.1'
 ```
 
 未提供密钥时，本地 Release 产物未签名，只用于构建检查，不能作为更新 APK。调试和正式包的测试 URL 常量相互独立，Release 固定为空，避免将模拟器测试接口发布给用户。

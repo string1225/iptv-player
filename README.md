@@ -2,6 +2,8 @@
 
 面向 Android 10 及以上电视 / 盒子的原生 IPTV 客户端。打开应用即播放默认频道，使用遥控器选台。
 
+[下载最新正式安装包](https://github.com/string1225/iptv-player/releases/latest/download/iptv-player.apk)。项目每次更新默认验证、推送代码并发布新版正式 Release，执行规则见 [AGENTS.md](AGENTS.md)。
+
 ## 功能
 
 - 启动自动播放指定默认频道；首次优先 CCTV1，没有 CCTV1 时播放列表首个频道。
@@ -82,9 +84,11 @@ GitHub Actions 对提交执行单元测试、Lint 和 APK 构建，成功后提�
 
 正式更新查询 `string1225/iptv-player` 的 GitHub `releases/latest`，只接受正式版本 `v主版本.次版本.修订号` 中的 `iptv-player.apk`。下载首先使用 `https://gh-proxy.org/https://github.com/.../releases/download/.../iptv-player.apk`，HTTP 失败、截断、校验失败均回退原下载地址。校验 GitHub 返回的 SHA-256、实际大小、APK 包名、版本、最低系统版本和签名；不同签名不能覆盖更新。
 
-Android 10 安装需要用户允许“安装未知应用”，然后在系统安装界面确认。APK 保存在应用私有目录，通过 FileProvider 授权安装器读取，重启后仍可继续安装。详细签名和发布步骤见 [Release 发布配置](docs/releasing.md)。Release 工作流需要仓库签名 Secrets，推送代码本身不会发布版本。
+Android 10 安装需要用户允许“安装未知应用”，然后在系统安装界面确认。APK 保存在应用私有目录，通过 FileProvider 授权安装器读取，重启后仍可继续安装。详细签名和发布步骤见 [Release 发布配置](docs/releasing.md)。每次更新推送代码后还要推送新版标签，等待 Release 工作流发布成功；仅推送源码不会触发客户端更新。v0.3.1 沿用已交付安装包的签名，支持从 0.3.0 覆盖升级。
 
 ## 验证
+
+0.3.1 通过 31 项单元测试、Release Lint（0 errors）及签名构建；与之前交付的 0.3.0 APK 签名一致，版本递增到 3001。正式包不可调试，测试接口为空，包含内置优先源。
 
 2026-10-25 优先源改动通过 31 项单元测试、Debug Lint（0 errors）和构建。API 29 验证原文件随 APK 打包、离线首次启动 / 重启载入 142 条线路、优先分类和源状态；本地播放用例验证优先线路失败后恢复到延后到达的备用线路，以及后台增加备用线路时不打断优先线路。正式调试 APK 的测试地址为空，v2 签名校验通过。当前开发网络连接 IPv6 直播地址超时，未据此宣称实际直播连通性已验证。
 
@@ -109,7 +113,7 @@ python tools/tv_smoke.py --adb <adb完整路径> --serial emulator-5556 --media 
 
 `tools/tv_regions_smoke.py` 验证 35 个地区连续滚动、两级菜单进退、12,042 台目录中的省内分页、合并线路、旧偏好迁移、地区默认台重启恢复、全部源失败时缓存继续播放，以及省内直接换台。需 API 29 且名称含 IPTV 的专用 AVD，显式传入 `--serial`；会清除本应用数据。
 
-`tools/tv_update_smoke.py` 额外测试 12,348 台分页 / 搜索、慢速远端下缓存先播放、手动 / 自动更新、加速站失败回退、未知来源授权、系统安装确认、重启恢复和错误签名。需要 Debug 同时设置 `-PtestPlaylistBaseUrl` 与 `-PtestUpdateBaseUrl`，并提供 0.3.1 同签名 / 异签名测试 APK（可用 `--update-version` 指定其他更新版本）；运行参数见脚本 `--help`。
+`tools/tv_update_smoke.py` 额外测试 12,348 台分页 / 搜索、慢速远端下缓存先播放、手动 / 自动更新、加速站失败回退、未知来源授权、系统安装确认、重启恢复和错误签名。需要 Debug 同时设置 `-PtestPlaylistBaseUrl` 与 `-PtestUpdateBaseUrl`，并提供 0.3.2 同签名 / 异签名测试 APK（可用 `--update-version` 指定其他更新版本）；运行参数见脚本 `--help`。
 
 两种测试 URL 替换只在 Debug 有效，Release 始终使用真实源 / GitHub。交付调试 APK 前重新运行 **不含任何测试参数** 的正常构建。截图 / 结果在忽略的 `artifacts/` 中。
 
