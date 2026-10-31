@@ -23,6 +23,8 @@ import com.string.iptv.catalog.CatalogIndex
 import com.string.iptv.catalog.ChannelNavigation
 import com.string.iptv.catalog.RouteState
 import com.string.iptv.catalog.StartupChannel
+import com.string.iptv.catalog.InstantChannel
+import com.string.iptv.catalog.Stream
 import com.string.iptv.data.CatalogSnapshot
 import com.string.iptv.data.PlaylistRepository
 import com.string.iptv.data.Preferences
@@ -53,6 +55,8 @@ class MainActivity : Activity() {
     private var catalog: CatalogSnapshot? = null
     private var latestStatus: PlaybackStatus? = null
     private var playingGroup: String? = null
+    private val drawerOpen get() = ::drawer.isInitialized && drawer.isOpen
+    private val loadCatalog = Runnable { repository.refresh() }
     private val handler = Handler(Looper.getMainLooper())
     private var lastBackAt = 0L
     private var dialog: AlertDialog? = null
@@ -73,7 +77,7 @@ class MainActivity : Activity() {
         }
     }
     private val hideInfo = Runnable {
-        if (latestStatus?.playing == true && !drawer.isOpen) screen.info.visibility = View.GONE
+        if (latestStatus?.playing == true && !drawerOpen) screen.info.visibility = View.GONE
     }
     private val clockTick = object : Runnable {
         override fun run() {
@@ -90,9 +94,6 @@ class MainActivity : Activity() {
         preferences = Preferences(this)
         screen = PlayerScreen(this)
         playback = PlaybackController(this, screen.player, preferences, ::renderPlayback, ::updateDrawer)
-        drawer = ChannelDrawer(this, { channel, group -> play(channel, group) }, ::showActions, ::closeDrawer, preferences::unavailableLabel)
-        screen.root.addView(drawer.root, FrameLayout.LayoutParams(
-            (resources.displayMetrics.widthPixels * 0.76f).toInt().coerceAtMost(dp(720)), MATCH_PARENT, Gravity.START))
         setContentView(screen.root)
         screen.root.setOnClickListener { openDrawer() }
         repository = PlaylistRepository(this, ::acceptCatalog)
@@ -101,7 +102,15 @@ class MainActivity : Activity() {
             onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT) { handleBack() }
         }
         handler.post(clockTick)
-        repository.refresh()
+        val fixture = BuildConfig.DEBUG && BuildConfig.TEST_PLAYLIST_BASE_URL.isNotEmpty()
+        if (!fixture || BuildConfig.TEST_STARTUP_STREAM_URL.isNotEmpty()) {
+            val initial = if (fixture) InstantChannel.dongfang.copy(streams = listOf(
+                Stream(BuildConfig.TEST_STARTUP_STREAM_URL, "zbds4txt"))) else InstantChannel.dongfang
+            val instant = preferences.instantChannel(initial)
+            playingGroup = instant.group
+            playback.select(instant)
+            handler.postDelayed(loadCatalog, 1_500)
+        } else handler.post(loadCatalog)
     }
 
     override fun onStart() { super.onStart(); playback.start(); updater.start() }
@@ -123,7 +132,7 @@ class MainActivity : Activity() {
     }
     override fun onDestroy() {
         repository.close()
-        drawer.close()
+        if (::drawer.isInitialized) drawer.close()
         updater.close()
         playback.stop()
         handler.removeCallbacksAndMessages(null)
@@ -153,7 +162,8 @@ class MainActivity : Activity() {
     }
 
     private fun updateDrawer() {
-        drawer.update(catalog?.index ?: CatalogIndex.EMPTY, preferences.favorites, preferences.defaultId, playback.channel?.id, playingGroup)
+        if (::drawer.isInitialized) drawer.update(catalog?.index ?: CatalogIndex.EMPTY,
+            preferences.favorites, preferences.defaultId, playback.channel?.id, playingGroup)
     }
 
     private fun play(channel: Channel, group: String? = playingGroup) {
@@ -170,7 +180,11 @@ class MainActivity : Activity() {
         if (!status.playing) {
             handler.removeCallbacks(hideInfo)
             screen.info.visibility = View.VISIBLE
-        } else showInfo()
+        } else {
+            handler.removeCallbacks(loadCatalog)
+            if (catalog == null) handler.post(loadCatalog)
+            showInfo()
+        }
     }
 
     private fun showInfo() {
@@ -180,6 +194,12 @@ class MainActivity : Activity() {
     }
 
     private fun openDrawer() {
+        if (!::drawer.isInitialized) {
+            drawer = ChannelDrawer(this, { channel, group -> play(channel, group) }, ::showActions,
+                ::closeDrawer, preferences::unavailableLabel)
+            screen.root.addView(drawer.root, FrameLayout.LayoutParams(
+                (resources.displayMetrics.widthPixels * 0.76f).toInt().coerceAtMost(dp(720)), MATCH_PARENT, Gravity.START))
+        }
         updateDrawer()
         drawer.show()
         screen.info.visibility = View.GONE
@@ -187,8 +207,10 @@ class MainActivity : Activity() {
     }
 
     private fun closeDrawer() {
-        drawer.hide()
-        (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(drawer.root.windowToken, 0)
+        if (::drawer.isInitialized) {
+            drawer.hide()
+            (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).hideSoftInputFromWindow(drawer.root.windowToken, 0)
+        }
         screen.root.requestFocus()
         showInfo()
     }
@@ -204,7 +226,7 @@ class MainActivity : Activity() {
         }
         val items = mutableListOf<Pair<String, () -> Unit>>()
         if (channel != null) {
-            items += "播放 ${channel.name}" to { play(channel, if (drawer.isOpen) drawer.groupFor(channel) else playingGroup) }
+            items += "播放 ${channel.name}" to { play(channel, if (drawerOpen) drawer.groupFor(channel) else playingGroup) }
             items += (if (channel.id == preferences.defaultId) "★ 已是默认频道：${channel.name}" else "设为默认频道：${channel.name}") to {
                 preferences.setDefault(channel)
                 updateDrawer()
@@ -262,7 +284,7 @@ class MainActivity : Activity() {
             .setSingleChoiceItems(choices, current) { choiceDialog, index ->
                 choiceDialog.dismiss()
                 dialog = null
-                playingGroup = (if (drawer.isOpen) drawer.groupFor(channel) else playingGroup)?.takeIf { it in channel.groups } ?: channel.group
+                playingGroup = (if (drawerOpen) drawer.groupFor(channel) else playingGroup)?.takeIf { it in channel.groups } ?: channel.group
                 closeDrawer()
                 playback.select(channel, index)
                 updateDrawer()
@@ -276,7 +298,8 @@ class MainActivity : Activity() {
                 status.loading -> "更新中"
                 status.cached -> "使用缓存"
                 status.error != null -> "失败"
-                status.source.assetPath != null -> "已内置 · 优先"
+                status.source.id == com.string.iptv.catalog.BuiltInSources.preferred.id -> "已内置 · 优先 · 已验证"
+                status.source.assetPath != null -> "已内置 · 已验证"
                 else -> "已更新"
             }
             val time = status.updatedAt?.let { SimpleDateFormat("MM-dd HH:mm", Locale.CHINA).format(Date(it)) }
@@ -404,10 +427,10 @@ class MainActivity : Activity() {
         }
         if (dialog?.isShowing == true) return super.dispatchKeyEvent(event)
         if (key == KeyEvent.KEYCODE_MENU || key == KeyEvent.KEYCODE_SETTINGS) {
-            if (down && event.repeatCount == 0) showActions(if (drawer.isOpen) drawer.focusedChannel else playback.channel)
+            if (down && event.repeatCount == 0) showActions(if (drawerOpen) drawer.focusedChannel else playback.channel)
             return true
         }
-        if (drawer.isOpen) {
+        if (drawerOpen) {
             if (key == KeyEvent.KEYCODE_ENTER && down && currentFocus is android.widget.EditText) ignoreSelectRelease = true
             if (key == KeyEvent.KEYCODE_CHANNEL_UP || key == KeyEvent.KEYCODE_CHANNEL_DOWN) {
                 if (down && event.repeatCount == 0) drawer.changePage(if (key == KeyEvent.KEYCODE_CHANNEL_UP) -1 else 1)
@@ -449,7 +472,7 @@ class MainActivity : Activity() {
     }
 
     private fun handleBack() {
-        if (drawer.isOpen) { if (!drawer.handleBack()) closeDrawer(); return }
+        if (drawerOpen) { if (!drawer.handleBack()) closeDrawer(); return }
         val now = android.os.SystemClock.elapsedRealtime()
         if (now - lastBackAt < 2_000) finish()
         else { lastBackAt = now; toast("再按一次返回退出"); showInfo() }

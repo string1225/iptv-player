@@ -12,7 +12,7 @@ android {
         applicationId = "com.string.iptv"
         minSdk = 29
         targetSdk = 36
-        val appVersion = providers.gradleProperty("appVersion").orElse("0.3.2").get()
+        val appVersion = providers.gradleProperty("appVersion").orElse("0.3.3").get()
         require(appVersion.matches(Regex("\\d+\\.\\d+\\.\\d+")))
         val parts = appVersion.split('.').map(String::toInt)
         require(parts[0] in 0..2000 && parts[1] in 0..999 && parts[2] in 0..999)
@@ -21,6 +21,7 @@ android {
         testInstrumentationRunner = "android.test.InstrumentationTestRunner"
         buildConfigField("String", "TEST_PLAYLIST_BASE_URL", "\"\"")
         buildConfigField("String", "TEST_UPDATE_BASE_URL", "\"\"")
+        buildConfigField("String", "TEST_STARTUP_STREAM_URL", "\"\"")
     }
     val signingFile = providers.environmentVariable("IPTV_STORE_FILE").orNull
     if (signingFile != null) {
@@ -36,6 +37,9 @@ android {
             val fixtureUrl = providers.gradleProperty("testPlaylistBaseUrl").orElse("").get()
             require(fixtureUrl.isEmpty() || fixtureUrl.matches(Regex("https?://[a-zA-Z0-9.:-]+")))
             buildConfigField("String", "TEST_PLAYLIST_BASE_URL", "\"$fixtureUrl\"")
+            val startupUrl = providers.gradleProperty("testStartupStreamUrl").orElse("").get()
+            require(startupUrl.isEmpty() || startupUrl.matches(Regex("https?://[a-zA-Z0-9.:/?=&_-]+")))
+            buildConfigField("String", "TEST_STARTUP_STREAM_URL", "\"$startupUrl\"")
             val updateUrl = providers.gradleProperty("testUpdateBaseUrl").orElse("").get()
             require(updateUrl.isEmpty() || updateUrl.matches(Regex("https?://[a-zA-Z0-9.:-]+")))
             buildConfigField("String", "TEST_UPDATE_BASE_URL", "\"$updateUrl\"")

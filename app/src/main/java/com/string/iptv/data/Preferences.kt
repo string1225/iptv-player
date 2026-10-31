@@ -5,6 +5,9 @@ import com.string.iptv.catalog.Channel
 import com.string.iptv.catalog.ChannelIdentity
 import com.string.iptv.catalog.RouteHealth
 import com.string.iptv.catalog.RouteState
+import com.string.iptv.catalog.Stream
+import org.json.JSONArray
+import org.json.JSONObject
 
 class Preferences(context: Context) {
     private val store = context.getSharedPreferences("tv_preferences", Context.MODE_PRIVATE)
@@ -47,7 +50,32 @@ class Preferences(context: Context) {
         set(value) { store.edit().putLong("last_update_check", value).apply() }
 
     fun setDefault(channel: Channel) {
-        store.edit().putString("default_channel", channel.id).putString("default_name", channel.name).apply()
+        val streams = JSONArray()
+        channel.streams.forEach { stream ->
+            streams.put(JSONObject().put("url", stream.url).put("source", stream.sourceId)
+                .put("headers", JSONObject(stream.headers)))
+        }
+        val startup = JSONObject().put("id", channel.id).put("name", channel.name).put("group", channel.group)
+            .put("streams", streams)
+        store.edit().putString("default_channel", channel.id).putString("default_name", channel.name)
+            .putString("instant_channel", startup.toString()).apply()
+    }
+
+    /** First upgrade adopts 东方卫视; later user-chosen defaults keep their own tiny route record. */
+    fun instantChannel(fallback: Channel): Channel {
+        val restored = runCatching {
+            val json = JSONObject(store.getString("instant_channel", null) ?: return@runCatching null)
+            if (json.getString("id") != defaultId) return@runCatching null
+            val streams = json.getJSONArray("streams")
+            val routes = (0 until streams.length()).map { index ->
+                val item = streams.getJSONObject(index)
+                val headers = item.getJSONObject("headers")
+                Stream(item.getString("url"), item.getString("source"), headers.keys().asSequence()
+                    .associateWith { headers.getString(it) })
+            }.filter { runCatching { java.net.URI(it.url).scheme in setOf("http", "https") }.getOrDefault(false) }
+            if (routes.isEmpty()) null else Channel(json.getString("id"), json.getString("name"), json.getString("group"), routes)
+        }.getOrNull()
+        return restored ?: fallback.also(::setDefault)
     }
 
     fun toggleFavorite(channel: Channel): Boolean {

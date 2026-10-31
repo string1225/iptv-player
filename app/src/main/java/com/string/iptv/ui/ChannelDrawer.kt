@@ -158,7 +158,7 @@ class ChannelDrawer(
         playingId = playing
         playingGroup = sourceGroup
         if (changed) {
-            val nextGroups = catalog.menuGroups + FAVORITES
+            val nextGroups = listOf(FAVORITES) + catalog.menuGroups
             val groupsChanged = groups != nextGroups
             val hadGroupFocus = groupsView.hasFocus()
             groups = nextGroups

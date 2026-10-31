@@ -12,11 +12,10 @@ class PreferredPlaylistTest {
         return PlaylistParser.parse(text, source.id)
     }
 
-    @Test fun suppliedPlaylistParsesAllIpv6RoutesAndCleansOnlyGenreSuffixes() {
+    @Test fun suppliedPlaylistContainsOnlyReviewedRoutesAndKeepsMetadata() {
         val entries = bundledEntries()
-        assertEquals(142, entries.size)
-        assertEquals(128, entries.count { URI(it.stream.url).host.contains(':') })
-        assertEquals(14, entries.count { !URI(it.stream.url).host.contains(':') })
+        assertEquals(77, entries.size)
+        assertEquals(77, entries.count { URI(it.stream.url).host.contains(':') })
         assertTrue(entries.none { "#genre#" in it.group })
         assertEquals("央视频道", entries.first().group)
         assertEquals("CCTV-1 综合", entries.first().name)
@@ -24,6 +23,30 @@ class PreferredPlaylistTest {
         assertEquals("News, China", PlaylistParser.parse(
             "#EXTINF:-1 group-title=\"News, China\",News\nhttps://example.com/news", "test").single().group)
         assertEquals("地方频道 / 上海", RegionalGroups.category(entries.first { it.group == "上海频道" }))
+    }
+
+    @Test fun reviewedZSnapshotsKeepStartupRoutesAndSeparateAudioOnlyChannels() {
+        val sources = BuiltInSources.all.filter { it.id.startsWith("zbds") }
+        assertEquals(listOf("zbds4m3u", "zbds4txt"), sources.map { it.id })
+        val entries = sources.flatMap { source ->
+            assertTrue(PlaylistDownloads.candidates(source).isEmpty())
+            val text = checkNotNull(javaClass.classLoader!!.getResourceAsStream(source.assetPath!!))
+                .bufferedReader(Charsets.UTF_8).use { it.readText() }
+            val parsed = PlaylistParser.parse(text, source.id)
+            assertEquals(if (source.id == "zbds4m3u") 410 else 518, parsed.size)
+            assertEquals(parsed.size, parsed.distinctBy { Triple(it.name, it.group, it.stream.healthKey) }.size)
+            assertTrue(parsed.filter { it.group == "广播频道" }.all { it.name.endsWith("（广播）") })
+            parsed
+        }
+        assertTrue(entries.any { it.group == "广播频道" })
+        InstantChannel.dongfang.streams.forEach { route ->
+            assertTrue(entries.any { it.name == "东方卫视" && it.stream == route })
+            assertFalse(URI(route.url).host.contains(':'))
+        }
+        val merged = CatalogMerger.merge(entries)
+        assertTrue(merged.filter { it.name.endsWith("（广播）") }.all { channel ->
+            channel.streams.all { route -> entries.any { it.stream == route && it.group == "广播频道" } }
+        })
     }
 
     @Test fun bundledSourceAndSharedChannelsComeBeforeAllBackupFamilies() {

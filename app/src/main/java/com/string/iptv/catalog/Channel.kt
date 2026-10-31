@@ -21,10 +21,8 @@ object BuiltInSources {
     )
     val all = listOf(
         preferred,
-        PlaylistSource("zbds4m3u", "直播电视 · IPv4 M3U", "https://live.zbds.top/tv/iptv4.m3u"),
-        PlaylistSource("zbds4txt", "直播电视 · IPv4 TXT", "https://live.zbds.top/tv/iptv4.txt"),
-        PlaylistSource("zbds6m3u", "直播电视 · IPv6 M3U", "https://live.zbds.top/tv/iptv6.m3u"),
-        PlaylistSource("zbds6txt", "直播电视 · IPv6 TXT", "https://live.zbds.top/tv/iptv6.txt"),
+        PlaylistSource("zbds4m3u", "直播电视 · IPv4 M3U", "asset:///playlists/zbds4m3u.m3u"),
+        PlaylistSource("zbds4txt", "直播电视 · IPv4 TXT", "asset:///playlists/zbds4txt.m3u"),
     ) + collected + PlaylistSource("iptvorg", "IPTV.org · 全球频道", "https://iptv-org.github.io/iptv/index.m3u")
 }
 

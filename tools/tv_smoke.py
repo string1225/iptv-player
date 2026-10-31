@@ -240,7 +240,7 @@ def main():
         assert health.count("UNAVAILABLE") >= 3, health
         key(82)
         wait_for("menu can manually disable the playing channel", lambda values: "标记为不可用（上下换台跳过）" in values)
-        menu_row(9)
+        menu_row(10)
         key(20, 165)
         wait_for("manual disable still allows leaving the channel", lambda values: "CCTV2" in values)
         launch()
@@ -260,7 +260,7 @@ def main():
         wait_for("manually disabled station is still selectable from the drawer", lambda values: "CCTV1" in values and any("正在直播" in v for v in values))
         key(82)
         wait_for("manual marker survives playback and offers undo", lambda values: "取消不可用标记（恢复上下换台）" in values)
-        menu_row(9)
+        menu_row(10)
         state["recover_bad3"] = True
         key(23)
         key(20, 20, 23)
